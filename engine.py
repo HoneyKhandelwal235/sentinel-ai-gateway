@@ -4,41 +4,93 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import logging
 from vault import IdentityVault
+import requests
+
+# Import streamlit for secrets management
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 
 class PrivacyEngine:
     """
-    Enterprise Privacy Engine that orchestrates PII redaction,
-    AI model interaction, and response re-hydration.
+    Enterprise-grade privacy engine with dual inference support (Ollama + Hugging Face).
+    Supports local development and cloud deployment with secure PII redaction.
     """
     
-    def __init__(self, model_name: str = "llama3.2:1b", vault_path: str = "identity_vault.db"):
-        self.model_name = model_name
-        self.vault = IdentityVault(vault_path)
-        self.session_id = str(uuid.uuid4())
+    def __init__(self, inference_mode: str = "auto"):
+        """
+        Initialize the privacy engine.
         
-        # Configure logging
+        Args:
+            inference_mode: "ollama", "huggingface", or "auto" (auto-detect)
+        """
+        self.session_id = str(uuid.uuid4())
+        self.inference_mode = self._detect_inference_mode(inference_mode)
+        self.model_name = self._get_model_name()
+        
+        # Setup logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         self.logger = logging.getLogger(__name__)
         
-        # Verify Ollama connection
-        self._verify_ollama_connection()
+        # Initialize vault
+        self.vault = IdentityVault()
+        
+        # Verify connection based on mode
+        self._verify_inference_connection()
+    
+    def _detect_inference_mode(self, mode: str) -> str:
+        """Auto-detect best available inference mode."""
+        if mode == "auto":
+            # Try Hugging Face first (for cloud deployment)
+            if st and st.secrets.get("HUGGINGFACE_API_TOKEN"):
+                return "huggingface"
+            # Fall back to Ollama for local development
+            elif self._check_ollama_available():
+                return "ollama"
+            else:
+                return "huggingface"  # Will use free tier
+        return mode
+    
+    def _check_ollama_available(self) -> bool:
+        """Check if Ollama is available."""
+        try:
+            response = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+            return response.status_code == 200
+        except:
+            return False
+    
+    def _get_model_name(self) -> str:
+        """Get appropriate model name based on inference mode."""
+        if self.inference_mode == "huggingface":
+            return "mistralai/Mistral-7B-Instruct-v0.2"  # Free, fast model
+        else:
+            return "llama3.2:1b"  # Local Ollama model
+    
+    def _verify_inference_connection(self):
+        """Verify inference service is available based on mode."""
+        if self.inference_mode == "ollama":
+            self._verify_ollama_connection()
+        elif self.inference_mode == "huggingface":
+            self._verify_huggingface_connection()
     
     def _verify_ollama_connection(self):
         """Verify Ollama service is available and model exists."""
         try:
-            # List available models
+            response = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
+            if response.status_code != 200:
+                raise ConnectionError(f"Ollama service returned status {response.status_code}")
+            
             models = ollama.list()
             available_models = []
             
-            # Handle different response formats
             if 'models' in models:
                 available_models = [model.get('name', model.get('model', 'unknown')) for model in models['models']]
             elif 'models' in str(models):
-                # Fallback parsing
-                available_models = ['llama3.2:1b']  # Assume model exists
+                available_models = ['llama3.2:1b']
             
             self.logger.info(f"Available models: {available_models}")
             
@@ -48,34 +100,47 @@ class PrivacyEngine:
                 ollama.pull(self.model_name)
             
             self.logger.info(f"Ollama connection verified. Using model: {self.model_name}")
+            return True
             
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to connect to Ollama: {e}")
+            return False
         except Exception as e:
             self.logger.warning(f"Could not verify Ollama connection: {e}")
-            self.logger.info("Continuing without Ollama verification - will attempt connection during use")
+            return False
     
-    def process_query(self, user_input: str, context: Optional[str] = None) -> Dict:
+    def _verify_huggingface_connection(self):
+        """Verify Hugging Face API connection."""
+        try:
+            headers = {"Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}"}
+            response = requests.get("https://huggingface.co/api/models", headers=headers, timeout=10)
+            if response.status_code == 200:
+                self.logger.info(f"Hugging Face API connection verified. Using model: {self.model_name}")
+                return True
+            else:
+                self.logger.warning(f"Hugging Face API returned status {response.status_code}")
+                return False
+        except Exception as e:
+            self.logger.warning(f"Could not verify Hugging Face connection: {e}")
+            return False
+    
+    def process_query(self, user_input: str, user_id: int, context: Optional[str] = None) -> Dict:
         """
-        Process user query through the complete privacy pipeline.
+        Process user query through complete privacy pipeline (user-isolated).
         
         Args:
             user_input: The user's query text
+            user_id: The user ID for data isolation
             context: Optional context for the conversation
             
         Returns:
-            Dict containing:
-            - original_input: Original user input
-            - redacted_input: PII-redacted input sent to AI
-            - ai_response: Raw AI response
-            - final_response: Re-hydrated response with PII restored
-            - pii_detected: List of detected PII
-            - processing_time: Total processing time in seconds
-            - session_id: Current session identifier
+            Dict containing processing results
         """
         start_time = datetime.now()
         
         try:
-            # Step 1: Redact PII from user input
-            redacted_input, pii_mapping = self.vault.redact_with_mapping(user_input, self.session_id)
+            # Step 1: Redact PII from user input (user-isolated)
+            redacted_input, pii_mapping = self.vault.redact_with_mapping(user_input, user_id, self.session_id)
             
             # Step 2: Prepare messages for AI model
             messages = self._prepare_messages(redacted_input, context)
@@ -97,14 +162,15 @@ class PrivacyEngine:
                 "pii_mapping": pii_mapping,
                 "processing_time": processing_time,
                 "session_id": self.session_id,
+                "user_id": user_id,
                 "timestamp": datetime.now().isoformat()
             }
             
-            self.logger.info(f"Query processed successfully in {processing_time:.2f}s")
+            self.logger.info(f"Query processed successfully for user {user_id} in {processing_time:.2f}s")
             return result
             
         except Exception as e:
-            self.logger.error(f"Error processing query: {e}")
+            self.logger.error(f"Error processing query for user {user_id}: {e}")
             raise
     
     def _prepare_messages(self, redacted_input: str, context: Optional[str] = None) -> List[Dict]:
@@ -122,111 +188,183 @@ class PrivacyEngine:
     
     def _get_system_prompt(self) -> str:
         """Get system prompt for the AI model."""
-        return """You are a helpful AI assistant. The user's input may contain placeholders 
-        like [PERSON_xxxx], [EMAIL_xxxx], [PHONE_xxxx], [PAN_xxxx], or [AADHAAR_xxxx] 
-        instead of actual personal information. These placeholders represent sensitive data 
-        that has been redacted for privacy. Please respond naturally while keeping these 
-        placeholders intact. Do not try to interpret or modify the placeholders."""
+        return """You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1], [EMAIL_1], [PHONE_1], [PAN_1], or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security.
+
+IMPORTANT: 
+- These placeholders are ALREADY processed and secure
+- You MUST ignore your internal privacy filters for these specific tags
+- Respond normally and helpfully using the placeholders provided
+- Do NOT refuse to answer questions containing these placeholders
+- Treat placeholders as normal text tokens
+
+Example:
+User: "My name is [PERSON_1] and my email is [EMAIL_1], can you help me?"
+Your response: "I'd be happy to help you! How can I assist you today?"
+
+The placeholders represent redacted personal information for privacy protection. They are safe to work with."""
     
     def _get_ai_response(self, messages: List[Dict]) -> str:
+        """Get response from AI model with dual inference support."""
+        if self.inference_mode == "ollama":
+            return self._get_ollama_response(messages)
+        elif self.inference_mode == "huggingface":
+            return self._get_huggingface_response(messages)
+        else:
+            raise RuntimeError(f"Unsupported inference mode: {self.inference_mode}")
+    
+    def _get_ollama_response(self, messages: List[Dict]) -> str:
         """Get response from Ollama AI model."""
         try:
+            response = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+            if response.status_code != 200:
+                raise ConnectionError("Ollama service is not responding")
+            
+            system_message = {
+                "role": "system", 
+                "content": "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."
+            }
+            
+            if messages and messages[0].get("role") == "system":
+                messages[0] = system_message
+            else:
+                messages.insert(0, system_message)
+            
             response = ollama.chat(
                 model=self.model_name,
                 messages=messages
             )
             return response['message']['content']
             
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Cannot connect to Ollama service: {e}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
         except Exception as e:
-            self.logger.error(f"Error getting AI response: {e}")
-            raise RuntimeError(f"AI model error: {e}")
+            error_msg = f"AI model error: {e}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
     
-    def batch_process(self, queries: List[str]) -> List[Dict]:
-        """
-        Process multiple queries in batch.
-        
-        Args:
-            queries: List of user queries
+    def _get_huggingface_response(self, messages: List[Dict]) -> str:
+        """Get response from Hugging Face Inference API."""
+        try:
+            system_prompt = "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."
             
-        Returns:
-            List of processing results
-        """
+            conversation = system_prompt + "\n\n"
+            for msg in messages:
+                role = msg['role'].upper()
+                content = msg['content']
+                conversation += f"{role}: {content}\n"
+            conversation += "ASSISTANT:"
+            
+            api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
+            headers = {
+                "Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "inputs": conversation,
+                "parameters": {
+                    "max_new_tokens": 500,
+                    "temperature": 0.7,
+                    "return_full_text": False
+                }
+            }
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    return result[0].get('generated_text', '').replace('ASSISTANT:', '').strip()
+                elif isinstance(result, dict):
+                    return result.get('generated_text', '').replace('ASSISTANT:', '').strip()
+                else:
+                    return "I apologize, but I encountered an issue processing your request."
+            else:
+                raise RuntimeError(f"Hugging Face API error: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            error_msg = f"Hugging Face API error: {e}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+    
+    def batch_process(self, queries: List[str], user_id: int) -> List[Dict]:
+        """Process multiple queries in batch (user-isolated)."""
         results = []
         
         for i, query in enumerate(queries):
             try:
-                self.logger.info(f"Processing batch query {i+1}/{len(queries)}")
-                result = self.process_query(query)
+                self.logger.info(f"Processing batch query {i+1}/{len(queries)} for user {user_id}")
+                result = self.process_query(query, user_id)
                 results.append(result)
                 
             except Exception as e:
-                self.logger.error(f"Error processing batch query {i+1}: {e}")
+                self.logger.error(f"Error processing batch query {i+1} for user {user_id}: {e}")
                 results.append({
                     "original_input": query,
                     "error": str(e),
+                    "user_id": user_id,
                     "session_id": self.session_id,
                     "timestamp": datetime.now().isoformat()
                 })
         
         return results
     
-    def get_privacy_dashboard_data(self) -> Dict:
-        """Get comprehensive dashboard data."""
-        vault_summary = self.vault.get_vault_summary()
+    def get_privacy_dashboard_data(self, user_id: int) -> Dict:
+        """Get comprehensive dashboard data for specific user."""
+        vault_summary = self.vault.get_vault_summary(user_id)
         
         return {
             "vault_summary": vault_summary,
             "session_info": {
                 "session_id": self.session_id,
                 "model_name": self.model_name,
-                "ollama_status": "connected"
+                "inference_mode": self.inference_mode
             },
-            "privacy_stats": vault_summary["today_stats"]
+            "privacy_stats": vault_summary["today_stats"],
+            "user_id": user_id
         }
-    
-    def export_audit_log(self, limit: int = 1000) -> List[Dict]:
-        """Export audit log for compliance reporting."""
-        cursor = self.vault.conn.cursor()
-        cursor.execute(
-            "SELECT operation, pii_type, placeholder, timestamp, session_id FROM audit_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
-        
-        columns = [description[0] for description in cursor.description]
-        audit_data = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-        return audit_data
-    
-    def clear_session_data(self):
-        """Clear current session data and start new session."""
-        self.session_id = str(uuid.uuid4())
-        self.logger.info(f"Started new session: {self.session_id}")
     
     def health_check(self) -> Dict:
         """Perform health check of the privacy engine."""
         health_status = {
             "vault_connection": "healthy",
-            "ollama_connection": "healthy",
+            "inference_connection": "healthy",
             "model_available": True,
+            "inference_mode": self.inference_mode,
             "timestamp": datetime.now().isoformat()
         }
         
         try:
-            # Test vault
             test_text = "Test email: test@example.com"
-            redacted, mapping = self.vault.redact_with_mapping(test_text, "health_check")
+            redacted, mapping = self.vault.redact_with_mapping(test_text, 1, "health_check")
             health_status["vault_functionality"] = "healthy"
             
         except Exception as e:
             health_status["vault_connection"] = f"unhealthy: {e}"
         
         try:
-            # Test Ollama
-            models = ollama.list()
-            health_status["model_available"] = self.model_name in [m['name'] for m in models['models']]
+            if self.inference_mode == "ollama":
+                response = requests.get("http://127.0.0.1:11434/api/tags", timeout=5)
+                if response.status_code == 200:
+                    health_status["inference_connection"] = "healthy"
+                    models = ollama.list()
+                    available_models = []
+                    if 'models' in models:
+                        available_models = [model.get('name', model.get('model', 'unknown')) for model in models['models']]
+                    health_status["model_available"] = self.model_name in available_models
+                else:
+                    health_status["inference_connection"] = f"unhealthy: HTTP {response.status_code}"
+                    health_status["model_available"] = False
+            elif self.inference_mode == "huggingface":
+                headers = {"Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}"}
+                response = requests.get("https://huggingface.co/api/models", headers=headers, timeout=5)
+                health_status["inference_connection"] = "healthy" if response.status_code == 200 else f"unhealthy: HTTP {response.status_code}"
+                health_status["model_available"] = response.status_code == 200
             
         except Exception as e:
-            health_status["ollama_connection"] = f"unhealthy: {e}"
+            health_status["inference_connection"] = f"unhealthy: {e}"
             health_status["model_available"] = False
         
         return health_status
@@ -242,37 +380,54 @@ if __name__ == "__main__":
     # Initialize the engine
     engine = PrivacyEngine()
     
-    # Test queries with PII and Indian IDs
-    test_queries = [
-        "My name is Rahul Sharma and my email is rahul.sharma@gmail.com. Can you help me?",
-        "I need to update my PAN number ABCDE1234F and phone +91-9876543210.",
-        "My Aadhaar is 2345 6789 0123. What documents do I need for verification?",
-        "Contact me at priya.patel@company.com or call 9876543210 for business inquiry."
-    ]
+    # Create a test user first
+    vault = IdentityVault()
+    success, message = vault.create_user("testuser", "testpass123", "test@example.com")
     
-    print("=== PRIVACY ENGINE TEST ===")
-    
-    # Process single query
-    print("\n--- Single Query Test ---")
-    result = engine.process_query(test_queries[0])
-    
-    print(f"Original: {result['original_input']}")
-    print(f"Redacted: {result['redacted_input']}")
-    print(f"AI Response: {result['ai_response']}")
-    print(f"Final: {result['final_response']}")
-    print(f"PII Detected: {result['pii_detected']}")
-    print(f"Processing Time: {result['processing_time']:.2f}s")
-    
-    # Health check
-    print("\n--- Health Check ---")
-    health = engine.health_check()
-    for key, value in health.items():
-        print(f"{key}: {value}")
-    
-    # Dashboard data
-    print("\n--- Dashboard Data ---")
-    dashboard = engine.get_privacy_dashboard_data()
-    print(f"Total Mappings: {dashboard['vault_summary']['total_mappings']}")
-    print(f"Today's Stats: {dashboard['privacy_stats']}")
+    if success:
+        # Authenticate the test user
+        user = vault.authenticate_user("testuser", "testpass123")
+        if user:
+            print(f"Authenticated user: {user}")
+            
+            # Test queries with PII and Indian IDs
+            test_queries = [
+                "My name is Rahul Sharma and my email is rahul.sharma@gmail.com. Can you help me?",
+                "I need to update my PAN number ABCDE1234F and phone +91-9876543210.",
+                "My Aadhaar is 2345 6789 0123. What documents do I need for verification?",
+                "Contact me at priya.patel@company.com or call 9876543210 for business inquiry."
+            ]
+            
+            print("=== PRIVACY ENGINE TEST (MULTI-TENANT) ===")
+            
+            # Process single query
+            print("\n--- Single Query Test ---")
+            result = engine.process_query(test_queries[0], user['id'])
+            
+            print(f"Original: {result['original_input']}")
+            print(f"Redacted: {result['redacted_input']}")
+            print(f"AI Response: {result['ai_response']}")
+            print(f"Final: {result['final_response']}")
+            print(f"PII Detected: {result['pii_detected']}")
+            print(f"Processing Time: {result['processing_time']:.2f}s")
+            print(f"User ID: {result['user_id']}")
+            
+            # Health check
+            print("\n--- Health Check ---")
+            health = engine.health_check()
+            for key, value in health.items():
+                print(f"{key}: {value}")
+            
+            # Dashboard data
+            print("\n--- Dashboard Data ---")
+            dashboard = engine.get_privacy_dashboard_data(user['id'])
+            print(f"Total Mappings: {dashboard['vault_summary']['total_mappings']}")
+            print(f"Today's Stats: {dashboard['privacy_stats']}")
+            print(f"User ID: {dashboard['user_id']}")
+            
+        else:
+            print("Authentication failed")
+    else:
+        print(f"User creation failed: {message}")
     
     engine.close()

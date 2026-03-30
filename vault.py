@@ -2,6 +2,7 @@ import sqlite3
 import re
 import hashlib
 import uuid
+import json
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
@@ -12,57 +13,99 @@ class IdentityVault:
     """
     
     def __init__(self, db_path: str = "identity_vault.db"):
-        self.db_path = db_path
-        self.conn = None
-        self._initialize_database()
+        """Initialize the identity vault with enhanced PII patterns."""
+        self.conn = sqlite3.connect(db_path)
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self._create_tables()
         
-        # Indian ID Regex Patterns
-        self.pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b')
-        self.aadhaar_pattern = re.compile(r'\b[2-9]{1}[0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b')
-        
-        # PII Patterns
+        # Enhanced PII detection patterns
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-        self.phone_pattern = re.compile(r'\b(?:\+91[-\s]?|0)?[6-9]\d{9}\b')
+        self.phone_pattern = re.compile(r'\+?91[-\s]?(\d{10}|\d{3}[-\s]?\d{3}[-\s]?\d{4})')
         
-    def _initialize_database(self):
-        """Initialize SQLite database with required tables."""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        # Enhanced Aadhaar patterns for different formats
+        self.aadhaar_patterns = [
+            re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'),  # XXXX-XXXX-XXXX or XXXX XXXX XXXX
+            re.compile(r'\b\d{12}\b'),  # XXXXXXXXXXXX (12 digits)
+            re.compile(r'\b\d{2}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{2}\b')  # XX-XXXX-XXXX-XX
+        ]
+        self.pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b')
+        
+        # Initialize Presidio analyzer
+        self.analyzer = AnalyzerEngine()
+        self.anonymizer = AnonymizerEngine()
+        
+    def _create_tables(self):
+        """Initialize SQLite database with required tables for multi-tenant architecture."""
         cursor = self.conn.cursor()
         
-        # PII Mappings Table
+        # Users Table for Authentication
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                email TEXT UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1
+            )
+        ''')
+        
+        # PII Mappings Table (Multi-tenant)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pii_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 placeholder TEXT UNIQUE NOT NULL,
                 real_value TEXT NOT NULL,
                 pii_type TEXT NOT NULL,
                 hash_value TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 access_count INTEGER DEFAULT 0,
-                last_accessed TIMESTAMP
+                last_accessed TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
         
-        # Audit Log Table
+        # Audit Log Table (Multi-tenant)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 operation TEXT NOT NULL,
                 pii_type TEXT NOT NULL,
                 placeholder TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                session_id TEXT
+                session_id TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
         
-        # Statistics Table
+        # Chat History Table (Multi-tenant)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                pii_detected TEXT,
+                processing_time REAL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                session_id TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # Statistics Table (Multi-tenant)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS privacy_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
                 pii_type TEXT NOT NULL,
                 count INTEGER DEFAULT 0,
-                UNIQUE(date, pii_type)
+                UNIQUE(user_id, date, pii_type),
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
         
@@ -76,9 +119,9 @@ class IdentityVault:
         """Generate SHA-256 hash for PII value."""
         return hashlib.sha256(value.encode()).hexdigest()
     
-    def detect_indian_ids(self, text: str) -> List[Tuple[str, str, str]]:
+    def detect_indian_ids(self, text: str, user_id: int) -> List[Tuple[str, str, str]]:
         """
-        Detect Indian IDs (PAN and Aadhaar) in text.
+        Detect Indian IDs (PAN and Aadhaar) in text with enhanced patterns (user-isolated).
         Returns: List of tuples (value, type, placeholder)
         """
         detections = []
@@ -86,51 +129,52 @@ class IdentityVault:
         # Detect PAN numbers
         for match in self.pan_pattern.finditer(text):
             pan_value = match.group()
-            placeholder = self._get_or_create_placeholder(pan_value, "PAN")
+            placeholder = self._get_or_create_placeholder(pan_value, "PAN", user_id)
             detections.append((pan_value, "PAN", placeholder))
         
-        # Detect Aadhaar numbers
-        for match in self.aadhaar_pattern.finditer(text):
-            aadhaar_value = re.sub(r'\s', '', match.group())  # Remove spaces
-            if len(aadhaar_value) == 12:  # Validate length
-                placeholder = self._get_or_create_placeholder(aadhaar_value, "AADHAAR")
-                detections.append((match.group(), "AADHAAR", placeholder))
+        # Detect Aadhaar numbers with multiple patterns
+        for pattern in self.aadhaar_patterns:
+            for match in pattern.finditer(text):
+                aadhaar_value = re.sub(r'[-\s]', '', match.group())  # Remove spaces and dashes
+                if len(aadhaar_value) == 12:  # Validate length
+                    placeholder = self._get_or_create_placeholder(aadhaar_value, "AADHAAR", user_id)
+                    detections.append((match.group(), "AADHAAR", placeholder))
         
         return detections
     
-    def detect_pii(self, text: str) -> List[Tuple[str, str, str]]:
+    def detect_pii(self, text: str, user_id: int) -> List[Tuple[str, str, str]]:
         """
-        Detect all PII types including Indian IDs.
+        Detect all PII types including Indian IDs (user-isolated).
         Returns: List of tuples (value, type, placeholder)
         """
         detections = []
         
         # Detect Indian IDs
-        detections.extend(self.detect_indian_ids(text))
+        detections.extend(self.detect_indian_ids(text, user_id))
         
         # Detect emails
         for match in self.email_pattern.finditer(text):
             email_value = match.group()
-            placeholder = self._get_or_create_placeholder(email_value, "EMAIL")
+            placeholder = self._get_or_create_placeholder(email_value, "EMAIL", user_id)
             detections.append((email_value, "EMAIL", placeholder))
         
         # Detect phone numbers
         for match in self.phone_pattern.finditer(text):
             phone_value = match.group()
-            placeholder = self._get_or_create_placeholder(phone_value, "PHONE")
+            placeholder = self._get_or_create_placeholder(phone_value, "PHONE", user_id)
             detections.append((phone_value, "PHONE", placeholder))
         
         return detections
     
-    def _get_or_create_placeholder(self, real_value: str, pii_type: str) -> str:
-        """Get existing placeholder or create new one for PII."""
+    def _get_or_create_placeholder(self, real_value: str, pii_type: str, user_id: int) -> str:
+        """Get existing placeholder or create new one for PII (user-isolated)."""
         hash_value = self._hash_value(real_value)
         cursor = self.conn.cursor()
         
-        # Check if PII already exists
+        # Check if PII already exists for this user
         cursor.execute(
-            "SELECT placeholder FROM pii_mappings WHERE hash_value = ? AND pii_type = ?",
-            (hash_value, pii_type)
+            "SELECT placeholder FROM pii_mappings WHERE hash_value = ? AND pii_type = ? AND user_id = ?",
+            (hash_value, pii_type, user_id)
         )
         result = cursor.fetchone()
         
@@ -144,19 +188,19 @@ class IdentityVault:
         else:
             placeholder = self._generate_placeholder(pii_type)
             cursor.execute(
-                "INSERT INTO pii_mappings (placeholder, real_value, pii_type, hash_value) VALUES (?, ?, ?, ?)",
-                (placeholder, real_value, pii_type, hash_value)
+                "INSERT INTO pii_mappings (placeholder, real_value, pii_type, hash_value, user_id) VALUES (?, ?, ?, ?, ?)",
+                (placeholder, real_value, pii_type, hash_value, user_id)
             )
         
         self.conn.commit()
         return placeholder
     
-    def redact_with_mapping(self, text: str, session_id: str = None) -> Tuple[str, Dict[str, str]]:
+    def redact_with_mapping(self, text: str, user_id: int, session_id: str = None) -> Tuple[str, Dict[str, str]]:
         """
-        Redact PII from text and return mapping.
+        Redact PII from text and return mapping (user-isolated).
         Returns: (redacted_text, {placeholder: real_value})
         """
-        detections = self.detect_pii(text)
+        detections = self.detect_pii(text, user_id)
         mapping = {}
         redacted_text = text
         
@@ -165,8 +209,8 @@ class IdentityVault:
             redacted_text = redacted_text.replace(value, placeholder)
             
             # Log operation
-            self._log_operation("REDACT", pii_type, placeholder, session_id)
-            self._update_stats(pii_type)
+            self._log_operation("REDACT", pii_type, placeholder, user_id, session_id)
+            self._update_stats(pii_type, user_id)
         
         return redacted_text, mapping
     
@@ -188,66 +232,225 @@ class IdentityVault:
         match = re.match(r'\[([A-Z_]+)_', placeholder)
         return match.group(1) if match else "UNKNOWN"
     
-    def _log_operation(self, operation: str, pii_type: str, placeholder: str, session_id: str = None):
-        """Log privacy operations for audit trail."""
+    def _log_operation(self, operation: str, pii_type: str, placeholder: str, user_id: int, session_id: str = None):
+        """Log privacy operations for audit trail (user-isolated)."""
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO audit_log (operation, pii_type, placeholder, session_id) VALUES (?, ?, ?, ?)",
-            (operation, pii_type, placeholder, session_id)
+            "INSERT INTO audit_log (operation, pii_type, placeholder, user_id, session_id) VALUES (?, ?, ?, ?, ?)",
+            (operation, pii_type, placeholder, user_id, session_id)
         )
         self.conn.commit()
     
-    def _update_stats(self, pii_type: str):
-        """Update daily privacy statistics."""
+    def _update_stats(self, pii_type: str, user_id: int):
+        """Update daily privacy statistics (user-isolated)."""
         cursor = self.conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
         
         cursor.execute(
-            "INSERT OR REPLACE INTO privacy_stats (date, pii_type, count) VALUES (?, ?, COALESCE((SELECT count FROM privacy_stats WHERE date = ? AND pii_type = ?), 0) + 1)",
-            (today, pii_type, today, pii_type)
+            "INSERT OR REPLACE INTO privacy_stats (user_id, date, pii_type, count) VALUES (?, ?, ?, COALESCE((SELECT count FROM privacy_stats WHERE user_id = ? AND date = ? AND pii_type = ?), 0) + 1)",
+            (user_id, today, pii_type, user_id, today, pii_type)
         )
         self.conn.commit()
     
-    def get_privacy_stats(self) -> Dict[str, int]:
-        """Get current privacy statistics."""
+    def get_privacy_stats(self, user_id: int) -> Dict[str, int]:
+        """Get current privacy statistics for a specific user."""
         cursor = self.conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
         
         cursor.execute(
-            "SELECT pii_type, count FROM privacy_stats WHERE date = ?",
-            (today,)
+            "SELECT pii_type, count FROM privacy_stats WHERE date = ? AND user_id = ?",
+            (today, user_id)
         )
         
         stats = {row[0]: row[1] for row in cursor.fetchall()}
         return stats
     
-    def get_vault_summary(self) -> Dict:
-        """Get comprehensive vault summary."""
+    def get_vault_summary(self, user_id: int) -> Dict:
+        """Get comprehensive vault summary for a specific user."""
         cursor = self.conn.cursor()
         
-        # Total mappings
-        cursor.execute("SELECT COUNT(*) FROM pii_mappings")
+        # Total mappings for user
+        cursor.execute("SELECT COUNT(*) FROM pii_mappings WHERE user_id = ?", (user_id,))
         total_mappings = cursor.fetchone()[0]
         
-        # PII type breakdown
-        cursor.execute("SELECT pii_type, COUNT(*) FROM pii_mappings GROUP BY pii_type")
+        # PII type breakdown for user
+        cursor.execute("SELECT pii_type, COUNT(*) FROM pii_mappings WHERE user_id = ? GROUP BY pii_type", (user_id,))
         type_breakdown = {row[0]: row[1] for row in cursor.fetchall()}
         
-        # Recent activity
+        # Recent activity for user
         cursor.execute("""
             SELECT operation, pii_type, timestamp 
             FROM audit_log 
+            WHERE user_id = ?
             ORDER BY timestamp DESC 
             LIMIT 10
-        """)
+        """, (user_id,))
         recent_activity = cursor.fetchall()
         
         return {
             "total_mappings": total_mappings,
             "type_breakdown": type_breakdown,
             "recent_activity": recent_activity,
-            "today_stats": self.get_privacy_stats()
+            "today_stats": self.get_privacy_stats(user_id)
         }
+    
+    # ===== USER AUTHENTICATION FUNCTIONS =====
+    
+    def create_user(self, username: str, password: str, email: str = None) -> Tuple[bool, str]:
+        """
+        Create a new user with hashed password.
+        Returns: (success, message)
+        """
+        cursor = self.conn.cursor()
+        
+        # Check if username already exists
+        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if cursor.fetchone():
+            return False, "Username already exists"
+        
+        # Check if email already exists
+        if email:
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                return False, "Email already exists"
+        
+        # Hash password
+        password_hash = self._hash_password(password)
+        
+        # Create user
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
+            (username, password_hash, email)
+        )
+        self.conn.commit()
+        
+        return True, "User created successfully"
+    
+    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
+        """
+        Authenticate user with username and password.
+        Returns: User data if successful, None otherwise
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, username, password_hash, email, is_active FROM users WHERE username = ?",
+            (username,)
+        )
+        user = cursor.fetchone()
+        
+        if not user:
+            return None
+        
+        user_id, username, stored_hash, email, is_active = user
+        
+        if not is_active:
+            return None
+        
+        # Verify password
+        if self._verify_password(password, stored_hash):
+            # Update last login
+            cursor.execute(
+                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                (user_id,)
+            )
+            self.conn.commit()
+            
+            return {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "is_active": is_active
+            }
+        
+        return None
+    
+    def _hash_password(self, password: str) -> str:
+        """Hash password using SHA-256 with salt."""
+        salt = "sentinel_ai_gateway_salt_2024"  # In production, use random salt per user
+        return hashlib.sha256((password + salt).encode()).hexdigest()
+    
+    def _verify_password(self, password: str, hashed: str) -> bool:
+        """Verify password against hash."""
+        return self._hash_password(password) == hashed
+    
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        """Get user information by ID."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, username, email, is_active, created_at, last_login FROM users WHERE id = ?",
+            (user_id,)
+        )
+        user = cursor.fetchone()
+        
+        if user:
+            return {
+                "id": user[0],
+                "username": user[1],
+                "email": user[2],
+                "is_active": user[3],
+                "created_at": user[4],
+                "last_login": user[5]
+            }
+        return None
+    
+    # ===== CHAT HISTORY FUNCTIONS =====
+    
+    def save_chat_message(self, user_id: int, message_type: str, content: str, 
+                          pii_detected: List[str] = None, processing_time: float = None, 
+                          session_id: str = None):
+        """Save chat message for user."""
+        cursor = self.conn.cursor()
+        pii_str = json.dumps(pii_detected) if pii_detected else None
+        cursor.execute(
+            "INSERT INTO chat_history (user_id, message_type, content, pii_detected, processing_time, session_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, message_type, content, pii_str, processing_time, session_id)
+        )
+        self.conn.commit()
+    
+    def get_chat_history(self, user_id: int, limit: int = 50) -> List[Dict]:
+        """Get chat history for user."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT message_type, content, pii_detected, processing_time, timestamp, session_id FROM chat_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+            (user_id, limit)
+        )
+        
+        messages = []
+        for row in cursor.fetchall():
+            pii_detected = json.loads(row[2]) if row[2] else []
+            messages.append({
+                "message_type": row[0],
+                "content": row[1],
+                "pii_detected": pii_detected,
+                "processing_time": row[3],
+                "timestamp": row[4],
+                "session_id": row[5]
+            })
+        
+        return messages
+    
+    def clear_user_chat_history(self, user_id: int):
+        """Clear chat history for user."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+    
+    def get_audit_log_for_user(self, user_id: int, limit: int = 1000) -> List[Dict]:
+        """Export audit log for specific user."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT operation, pii_type, placeholder, timestamp, session_id FROM audit_log WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+            (user_id, limit)
+        )
+        
+        columns = [description[0] for description in cursor.description]
+        audit_data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        return audit_data
+    
+    def export_audit_log_for_user(self, user_id: int, limit: int = 1000) -> List[Dict]:
+        """Export audit log for specific user (alias for compatibility)."""
+        return self.get_audit_log_for_user(user_id, limit)
     
     def close(self):
         """Close database connection."""
@@ -256,29 +459,48 @@ class IdentityVault:
 
 # --- TEST ---
 if __name__ == "__main__":
+    import json
+    
     vault = IdentityVault()
     
-    # Test with Indian IDs and PII
-    test_text = """
-    My name is John Doe. Email: john.doe@example.com, Phone: +91-9876543210.
-    PAN: ABCDE1234F, Aadhaar: 2345 6789 0123
-    """
+    # Test user creation
+    print("=== USER AUTHENTICATION TEST ===")
+    success, message = vault.create_user("testuser", "testpass123", "test@example.com")
+    print(f"User creation: {success} - {message}")
     
-    print("=== ORIGINAL TEXT ===")
-    print(test_text)
-    
-    redacted, mapping = vault.redact_with_mapping(test_text, "test_session")
-    
-    print("\n=== REDACTED TEXT ===")
-    print(redacted)
-    
-    print("\n=== MAPPING ===")
-    for placeholder, real_value in mapping.items():
-        print(f"{placeholder} -> {real_value}")
-    
-    print("\n=== VAULT SUMMARY ===")
-    summary = vault.get_vault_summary()
-    for key, value in summary.items():
-        print(f"{key}: {value}")
+    # Test authentication
+    user = vault.authenticate_user("testuser", "testpass123")
+    if user:
+        print(f"Authentication successful: {user}")
+        
+        # Test PII detection for user
+        test_text = "My name is John Doe. Email: john.doe@example.com, Phone: +91-9876543210. PAN: ABCDE1234F, Aadhaar: 2345 6789 0123"
+        
+        print("\n=== PII DETECTION TEST ===")
+        print(f"Original: {test_text}")
+        
+        redacted, mapping = vault.redact_with_mapping(test_text, user['id'], "test_session")
+        print(f"Redacted: {redacted}")
+        print(f"Mapping: {mapping}")
+        
+        # Save chat message
+        vault.save_chat_message(user['id'], "user", test_text, list(mapping.values()), 1.5, "test_session")
+        vault.save_chat_message(user['id'], "ai", "This is a response", [], 0.8, "test_session")
+        
+        # Get chat history
+        print("\n=== CHAT HISTORY ===")
+        history = vault.get_chat_history(user['id'])
+        for msg in history:
+            print(f"{msg['message_type']}: {msg['content'][:50]}...")
+        
+        # Get vault summary
+        print("\n=== VAULT SUMMARY ===")
+        summary = vault.get_vault_summary(user['id'])
+        print(f"Total mappings: {summary['total_mappings']}")
+        print(f"PII types: {summary['type_breakdown']}")
+        print(f"Today's stats: {summary['today_stats']}")
+        
+    else:
+        print("Authentication failed")
     
     vault.close()
