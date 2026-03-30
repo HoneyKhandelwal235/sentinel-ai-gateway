@@ -258,8 +258,6 @@ This project is designed for educational purposes and final year projects. Feel 
 
 ## 📄 License
 
-This project is provided for educational purposes. Please ensure compliance with your institution's policies and applicable data protection laws.
-
 ## 📞 Support
 
 For issues and questions:
