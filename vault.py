@@ -401,11 +401,21 @@ class IdentityVault:
                           pii_detected: List[str] = None, processing_time: float = None, 
                           session_id: str = None):
         """Save chat message for user."""
-        # First verify user exists
         cursor = self.conn.cursor()
+        
+        # First verify user exists and get fresh user_id
         cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-        if not cursor.fetchone():
+        user_row = cursor.fetchone()
+        if not user_row:
+            print(f"User with ID {user_id} does not exist in database")
+            # Try to find user by session or recreate
             raise ValueError(f"User with ID {user_id} does not exist")
+        
+        # Double-check we have the correct user_id
+        actual_user_id = user_row[0]
+        if actual_user_id != user_id:
+            print(f"User ID mismatch: expected {user_id}, found {actual_user_id}")
+            user_id = actual_user_id
         
         pii_str = json.dumps(pii_detected) if pii_detected else None
         try:
@@ -417,6 +427,12 @@ class IdentityVault:
         except Exception as e:
             self.conn.rollback()
             print(f"Error saving chat message: {e}")
+            # If foreign key fails, try to diagnose
+            if "FOREIGN KEY constraint failed" in str(e):
+                print(f"Debug: Available users in database:")
+                cursor.execute("SELECT id, username FROM users")
+                users = cursor.fetchall()
+                print(f"Users: {users}")
             raise
     
     def get_chat_history(self, user_id: int, limit: int = 50) -> List[Dict]:
