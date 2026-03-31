@@ -41,7 +41,7 @@ class IdentityVault:
         """Initialize SQLite database with required tables for multi-tenant architecture."""
         cursor = self.conn.cursor()
         
-        # Users Table for Authentication
+        # Create Users Table FIRST (required for foreign keys)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,29 +54,29 @@ class IdentityVault:
             )
         ''')
         
-        # PII Mappings Table (Multi-tenant)
+        # Create PII Mappings Table (depends on users)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pii_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
                 placeholder TEXT UNIQUE NOT NULL,
                 real_value TEXT NOT NULL,
                 pii_type TEXT NOT NULL,
                 hash_value TEXT NOT NULL,
+                user_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                access_count INTEGER DEFAULT 0,
                 last_accessed TIMESTAMP,
+                access_count INTEGER DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
         
-        # Audit Log Table (Multi-tenant)
+        # Create Audit Log Table (depends on users)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                user_id INTEGER,
                 operation TEXT NOT NULL,
-                pii_type TEXT NOT NULL,
+                pii_type TEXT,
                 placeholder TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 session_id TEXT,
@@ -84,11 +84,11 @@ class IdentityVault:
             )
         ''')
         
-        # Chat History Table (Multi-tenant)
+        # Create Chat History Table (depends on users)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                user_id INTEGER,
                 message_type TEXT NOT NULL,
                 content TEXT NOT NULL,
                 pii_detected TEXT,
@@ -99,15 +99,14 @@ class IdentityVault:
             )
         ''')
         
-        # Statistics Table (Multi-tenant)
+        # Create Privacy Stats Table (depends on users)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS privacy_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
+                user_id INTEGER,
                 pii_type TEXT NOT NULL,
-                count INTEGER DEFAULT 0,
-                UNIQUE(user_id, date, pii_type),
+                detection_count INTEGER DEFAULT 0,
+                last_detected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')

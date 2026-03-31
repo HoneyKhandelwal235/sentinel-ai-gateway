@@ -132,7 +132,7 @@ def render_login_page():
                     if user:
                         st.session_state.current_user = user
                         st.session_state.authenticated = True
-                        st.session_state.privacy_engine = PrivacyEngine()
+                        st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
                         st.success(f"Welcome back, {user['username']}!")
                         time.sleep(1)
                         st.rerun()
@@ -321,10 +321,15 @@ def handle_query(user_input: str):
     if not user_input or not st.session_state.authenticated:
         return
     
-    user_id = st.session_state.current_user['id']
+    # Ensure we have the correct user_id
+    user_id = st.session_state.current_user.get('id')
+    if not user_id:
+        st.error("🔧 Session error: User ID not found. Please login again.")
+        return
     
-    # Debug: Show inference mode
+    # Debug: Show inference mode and user ID
     st.sidebar.write(f"🔧 Debug: Using {st.session_state.privacy_engine.inference_mode} mode")
+    st.sidebar.write(f"🔧 Debug: User ID: {user_id}")
     
     try:
         with st.spinner("🔄 Processing your secure query..."):
