@@ -7,6 +7,8 @@ sdk: streamlit
 sdk_version: 1.55.0
 app_file: app.py
 pinned: false
+# Cache buster - forces rebuild
+cache_buster: 20260331
 ---
 
 # 🛡️ Sentinel AI Privacy Gateway
