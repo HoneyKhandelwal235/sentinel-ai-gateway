@@ -370,6 +370,15 @@ def handle_query(user_input: str):
         # Debug information (remove in production)
         st.error(f"Debug info: {str(e)}")
         
+        # Handle specific database errors
+        if "FOREIGN KEY constraint failed" in str(e):
+            st.error("🔧 Session issue detected. Please logout and login again.")
+            if st.button("🔄 Logout and Reset"):
+                # Clear all session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+        
         # Log the error for debugging (in production, this would go to a monitoring service)
         print(f"Unexpected error in handle_query: {e}")
 

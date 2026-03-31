@@ -402,13 +402,23 @@ class IdentityVault:
                           pii_detected: List[str] = None, processing_time: float = None, 
                           session_id: str = None):
         """Save chat message for user."""
+        # First verify user exists
         cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+        if not cursor.fetchone():
+            raise ValueError(f"User with ID {user_id} does not exist")
+        
         pii_str = json.dumps(pii_detected) if pii_detected else None
-        cursor.execute(
-            "INSERT INTO chat_history (user_id, message_type, content, pii_detected, processing_time, session_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, message_type, content, pii_str, processing_time, session_id)
-        )
-        self.conn.commit()
+        try:
+            cursor.execute(
+                "INSERT INTO chat_history (user_id, message_type, content, pii_detected, processing_time, session_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, message_type, content, pii_str, processing_time, session_id)
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            print(f"Error saving chat message: {e}")
+            raise
     
     def get_chat_history(self, user_id: int, limit: int = 50) -> List[Dict]:
         """Get chat history for user."""
