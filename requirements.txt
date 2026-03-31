@@ -1,37 +1,59 @@
-# Core Dependencies
-streamlit==1.29.0
-ollama==0.1.7
-plotly==5.17.0
-pandas==2.1.4
+# Core Streamlit SDK
+streamlit==1.55.0
 
-# Privacy & Security
-presidio-analyzer==2.2.35
-presidio-anonymizer==2.2.35
+# Web framework and server
+uvicorn>=0.14.0
+websockets>=10.4
 
-# Database & Utilities
+# Data processing and analysis
+pandas==2.2.3
+numpy==1.26.4
+scikit-learn==1.5.2
+
+# Security and PII detection
+presidio-analyzer>=2.2.162
+presidio-anonymizer>=2.2.162
+cryptography>=41.0.7
+
+# Database
 sqlite3
 
-# Additional Dependencies for Enhanced Functionality
-python-dotenv==1.0.0
-requests==2.31.0
-numpy==1.24.3
+# HTTP requests
+requests>=2.31.0
 
-# Security & Authentication
-cryptography==41.0.8
-passlib[bcrypt]==1.7.4
-
-# Text Processing & NLP
-nltk==3.8.1
+# Text processing
 regex==2023.10.3
-spacy==3.7.2
 
-# Utilities
-uuid==1.30
-typing-extensions==4.8.0
-pydantic==2.5.0
+# JSON handling
+json
 
-# Development & Testing (Optional)
-pytest==7.4.3
+# Logging
+logging
+
+# Development utilities
+pytest>=7.4.4
+python-dotenv>=1.0.0
+
+# Hugging Face integration
+huggingface-hub>=0.30.0
+transformers>=4.40.0
+torch>=2.2.0
+
+# Date and time
+python-dateutil>=2.8.2
+
+# Type hints
+typing-extensions>=4.8.0
+
+# Hashing
+hashlib
+
+# UUID generation
+uuid
+
+# Additional utilities
+tqdm>=4.66.0
+colorama>=0.4.63
 pytest-asyncio==0.21.1
 black==23.9.1
 flake8==6.1.0
