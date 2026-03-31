@@ -1,10 +1,12 @@
 import sqlite3
-import re
 import hashlib
 import uuid
-import json
+import re
+import logging
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
 
 class IdentityVault:
     """
