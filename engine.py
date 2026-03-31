@@ -400,6 +400,9 @@ The placeholders represent redacted personal information for privacy protection.
                     else:
                         health_status["inference_connection"] = "local_development"
                         health_status["model_available"] = False
+                except Exception as e:
+                    health_status["inference_connection"] = f"unhealthy: {e}"
+                    health_status["model_available"] = False
             
         except Exception as e:
             health_status["inference_connection"] = f"unhealthy: {e}"
