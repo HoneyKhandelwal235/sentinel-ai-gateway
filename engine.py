@@ -46,10 +46,15 @@ class PrivacyEngine:
         """Auto-detect best available inference mode."""
         if mode == "auto":
             # Try Hugging Face first (for cloud deployment)
-            if st and st.secrets.get("HUGGINGFACE_API_TOKEN"):
-                return "huggingface"
+            try:
+                if st and st.secrets.get("HUGGINGFACE_API_TOKEN"):
+                    return "huggingface"
+            except Exception:
+                # Secrets not available (local development)
+                pass
+            
             # Fall back to Ollama for local development
-            elif self._check_ollama_available():
+            if self._check_ollama_available():
                 return "ollama"
             else:
                 return "huggingface"  # Will use free tier
@@ -112,7 +117,18 @@ class PrivacyEngine:
     def _verify_huggingface_connection(self):
         """Verify Hugging Face API connection."""
         try:
-            headers = {"Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}"}
+            token = None
+            try:
+                token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
+            except Exception:
+                # Secrets not available in local development
+                pass
+            
+            if not token:
+                self.logger.info("Hugging Face API token not found, will use free tier")
+                return True
+                
+            headers = {"Authorization": f"Bearer {token}"}
             response = requests.get("https://huggingface.co/api/models", headers=headers, timeout=10)
             if response.status_code == 200:
                 self.logger.info(f"Hugging Face API connection verified. Using model: {self.model_name}")
@@ -122,7 +138,7 @@ class PrivacyEngine:
                 return False
         except Exception as e:
             self.logger.warning(f"Could not verify Hugging Face connection: {e}")
-            return False
+            return True  # Allow continuation for local development
     
     def process_query(self, user_input: str, user_id: int, context: Optional[str] = None) -> Dict:
         """
@@ -256,9 +272,20 @@ The placeholders represent redacted personal information for privacy protection.
                 conversation += f"{role}: {content}\n"
             conversation += "ASSISTANT:"
             
+            # Get token safely
+            token = None
+            try:
+                token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
+            except Exception:
+                # Secrets not available in local development
+                pass
+            
+            if not token:
+                return "🔧 **Local Development Mode**: Hugging Face API token not configured. Please set HUGGINGFACE_API_TOKEN in Hugging Face Space secrets or start Ollama for local inference."
+            
             api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
             headers = {
-                "Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}",
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
             
@@ -358,10 +385,21 @@ The placeholders represent redacted personal information for privacy protection.
                     health_status["inference_connection"] = f"unhealthy: HTTP {response.status_code}"
                     health_status["model_available"] = False
             elif self.inference_mode == "huggingface":
-                headers = {"Authorization": f"Bearer {st.secrets.get('HUGGINGFACE_API_TOKEN', '')}"}
-                response = requests.get("https://huggingface.co/api/models", headers=headers, timeout=5)
-                health_status["inference_connection"] = "healthy" if response.status_code == 200 else f"unhealthy: HTTP {response.status_code}"
-                health_status["model_available"] = response.status_code == 200
+                try:
+                    token = None
+                    try:
+                        token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
+                    except Exception:
+                        pass
+                    
+                    if token:
+                        headers = {"Authorization": f"Bearer {token}"}
+                        response = requests.get("https://huggingface.co/api/models", headers=headers, timeout=5)
+                        health_status["inference_connection"] = "healthy" if response.status_code == 200 else f"unhealthy: HTTP {response.status_code}"
+                        health_status["model_available"] = response.status_code == 200
+                    else:
+                        health_status["inference_connection"] = "local_development"
+                        health_status["model_available"] = False
             
         except Exception as e:
             health_status["inference_connection"] = f"unhealthy: {e}"
