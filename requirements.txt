@@ -53,7 +53,7 @@ uuid
 
 # Additional utilities
 tqdm>=4.66.0
-colorama>=0.4.63
+colorama>=0.4.6
 pytest-asyncio==0.21.1
 black==23.9.1
 flake8==6.1.0
