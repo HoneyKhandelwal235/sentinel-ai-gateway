@@ -323,6 +323,9 @@ def handle_query(user_input: str):
     
     user_id = st.session_state.current_user['id']
     
+    # Debug: Show inference mode
+    st.sidebar.write(f"🔧 Debug: Using {st.session_state.privacy_engine.inference_mode} mode")
+    
     try:
         with st.spinner("🔄 Processing your secure query..."):
             # Save user message to chat history
@@ -363,6 +366,9 @@ def handle_query(user_input: str):
         st.error("🔧 **Service Temporarily Unavailable**")
         st.warning("An unexpected error occurred. The system has been notified and is working to resolve this issue.")
         st.info("Please try again in a few moments. Your data is secure and protected.")
+        
+        # Debug information (remove in production)
+        st.error(f"Debug info: {str(e)}")
         
         # Log the error for debugging (in production, this would go to a monitoring service)
         print(f"Unexpected error in handle_query: {e}")
