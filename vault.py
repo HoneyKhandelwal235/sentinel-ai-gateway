@@ -99,9 +99,9 @@ class IdentityVault:
             )
         ''')
         
-        # Create Privacy Stats Table (depends on users)
+        # Create Privacy Stats Table (depends on users) - MIGRATE OLD SCHEMA
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS privacy_stats (
+            CREATE TABLE IF NOT EXISTS privacy_stats_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 date TEXT NOT NULL,
@@ -110,6 +110,32 @@ class IdentityVault:
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
+        
+        # Check if we need to migrate from old schema
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='privacy_stats'")
+        old_table_exists = cursor.fetchone()
+        
+        if old_table_exists:
+            # Check if old table has wrong schema
+            cursor.execute("PRAGMA table_info(privacy_stats)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'detection_count' in columns and 'count' not in columns:
+                print("Migrating privacy_stats table schema...")
+                # Migrate data from old to new table
+                cursor.execute('''
+                    INSERT INTO privacy_stats_new (user_id, date, pii_type, count)
+                    SELECT user_id, date(last_detected, 'YYYY-MM-DD'), pii_type, detection_count
+                    FROM privacy_stats
+                ''')
+                
+                # Drop old table and rename new one
+                cursor.execute("DROP TABLE privacy_stats")
+                cursor.execute("ALTER TABLE privacy_stats_new RENAME TO privacy_stats")
+                print("Migration completed")
+        else:
+            # No old table, just rename the new one
+            cursor.execute("DROP TABLE privacy_stats_new")
         
         self.conn.commit()
     
