@@ -1,16 +1,14 @@
 ---
-title: 🔒 Sentinel AI Privacy Gateway
-emoji: 🔐
+title: Sentinel AI Privacy Gateway
+emoji: 🛡️
 colorFrom: blue
-colorTo: indigo
+colorTo: green
 sdk: streamlit
-sdk_version: 1.29.0
 app_file: app.py
 pinned: false
-license: mit
 ---
 
-# 🔒 Sentinel AI Privacy Gateway
+# 🛡️ Sentinel AI Privacy Gateway
 
 An **Enterprise-Grade Multi-Tenant AI Security Gateway** that provides **real-time PII redaction** and **secure AI interactions**. Perfect for organizations that need to protect sensitive data while leveraging AI capabilities.
 
