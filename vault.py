@@ -104,9 +104,9 @@ class IdentityVault:
             CREATE TABLE IF NOT EXISTS privacy_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
+                date TEXT NOT NULL,
                 pii_type TEXT NOT NULL,
-                detection_count INTEGER DEFAULT 0,
-                last_detected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                count INTEGER DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
