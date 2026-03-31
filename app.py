@@ -258,7 +258,8 @@ def render_security_dashboard():
         st.sidebar.markdown("#### Connections")
         st.sidebar.write(f"🤖 AI Model: {st.session_state.privacy_engine.model_name}")
         st.sidebar.write(f"🗄️ Vault: {'🟢 Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
-        st.sidebar.write(f"🌐 Ollama: {'🟢 Connected' if health['ollama_connection'] == 'healthy' else '🔴 Error'}")
+        st.sidebar.write(f"🌐 AI Service: {'🟢 Connected' if health['inference_connection'] == 'healthy' else '🔴 Error'}")
+        st.sidebar.write(f"🔧 Mode: {health.get('inference_mode', 'unknown').upper()}")
         
         # PII Statistics
         st.sidebar.markdown("### 📊 Today's PII Statistics")

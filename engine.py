@@ -403,7 +403,6 @@ The placeholders represent redacted personal information for privacy protection.
                 except Exception as e:
                     health_status["inference_connection"] = f"unhealthy: {e}"
                     health_status["model_available"] = False
-            
         except Exception as e:
             health_status["inference_connection"] = f"unhealthy: {e}"
             health_status["model_available"] = False
