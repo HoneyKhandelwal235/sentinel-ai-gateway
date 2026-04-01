@@ -321,10 +321,32 @@ def handle_query(user_input: str):
     if not user_input or not st.session_state.authenticated:
         return
     
-    # Ensure we have the correct user_id
+    # Ensure we have the correct user_id and validate session
     user_id = st.session_state.current_user.get('id')
     if not user_id:
         st.error("🔧 Session error: User ID not found. Please login again.")
+        if st.button("🔄 Login Again"):
+            # Clear all session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        return
+    
+    # Validate user exists in database before proceeding
+    try:
+        vault = st.session_state.vault
+        cursor = vault.conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+        if not cursor.fetchone():
+            st.error("🔧 Session error: User not found in database. Please login again.")
+            if st.button("🔄 Login Again"):
+                # Clear all session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+            return
+    except Exception as e:
+        st.error(f"🔧 Database validation error: {e}")
         return
     
     # Debug: Show inference mode and user ID
