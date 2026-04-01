@@ -197,15 +197,15 @@ def render_user_info():
             'pii_blocked': 0,
             'total_processing_time': 0.0
         })
-            # Reset session stats
-            st.session_state.session_stats = {
-                'queries_processed': 0,
-                'pii_blocked': 0,
-                'total_processing_time': 0.0
-            }
-            
-            st.sidebar.success("✅ Cache cleared successfully!")
-            st.rerun()
+        # Reset session stats
+        st.session_state.session_stats = {
+            'queries_processed': 0,
+            'pii_blocked': 0,
+            'total_processing_time': 0.0
+        }
+        
+        st.sidebar.success("✅ Cache cleared successfully!")
+        st.rerun()
         
         # Session stats
         st.sidebar.markdown("### 📊 Session Statistics")
