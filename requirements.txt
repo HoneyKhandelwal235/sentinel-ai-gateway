@@ -63,3 +63,8 @@ python-dateutil==2.8.2
 
 # Hashing (built-in, but listed for clarity)
 # hashlib - Built-in Python module
+
+# AI and NLP Models
+ollama
+spacy==3.7.4
+https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1-py3-none-any.whl
