@@ -185,23 +185,18 @@ def render_logout_button():
             st.rerun()
 
 def render_user_info():
-    """Render user information in sidebar."""
-    if st.session_state.authenticated and st.session_state.current_user:
-        st.sidebar.markdown("### 👤 User Information")
+    """Render user information and session statistics in sidebar."""
+    if st.session_state.authenticated:
         user = st.session_state.current_user
+        st.sidebar.markdown(f"### 👤 User Information")
         st.sidebar.write(f"**Username:** {user['username']}")
-        if user['email']:
-            st.sidebar.write(f"**Email:** {user['email']}")
         
-        # Clear Cache button
-        if st.sidebar.button("🗑️ Clear Cache", type="secondary", key="clear_cache_btn"):
-            # Clear all session state except authentication
-            keys_to_keep = ['current_user', 'authenticated', 'vault', 'privacy_engine']
-            keys_to_clear = [key for key in st.session_state.keys() if key not in keys_to_keep]
-            
-            for key in keys_to_clear:
-                del st.session_state[key]
-            
+        # Session Statistics
+        stats = st.session_state.get('session_stats', {
+            'queries_processed': 0,
+            'pii_blocked': 0,
+            'total_processing_time': 0.0
+        })
             # Reset session stats
             st.session_state.session_stats = {
                 'queries_processed': 0,
@@ -222,62 +217,9 @@ def render_user_info():
         st.sidebar.metric("Avg Processing Time", f"{avg_time:.2f}s")
 
 def render_security_dashboard():
-    """Render the security dashboard sidebar."""
-    st.sidebar.markdown("## 🔐 Security Dashboard")
-    
-    # User info and logout
-    render_user_info()
-    render_logout_button()
-    
-    if not st.session_state.authenticated:
-        return
-    
-    # Get dashboard data
-    try:
-        user_id = st.session_state.current_user['id']
-        vault_summary = st.session_state.vault.get_vault_summary(user_id)
-        privacy_stats = vault_summary['today_stats']
-        
-        # System Status
-        st.sidebar.markdown("### System Status")
-        health = st.session_state.privacy_engine.health_check()
-        
-        status_color = "status-healthy"
-        if "unhealthy" in str(health.values()):
-            status_color = "status-error"
-        elif any("warning" in str(v).lower() for v in health.values()):
-            status_color = "status-warning"
-        
-        st.sidebar.markdown(f"""
-        <div class="security-status {status_color}">
-            <strong>Overall Status:</strong> {'🟢 Healthy' if status_color == 'status-healthy' else '🟡 Warning' if status_color == 'status-warning' else '🔴 Error'}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Connection Status
-        st.sidebar.markdown("#### Connections")
-        st.sidebar.write(f"🤖 AI Model: {st.session_state.privacy_engine.model_name}")
-        st.sidebar.write(f"🗄️ Vault: {'🟢 Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
-        st.sidebar.write(f"🌐 AI Service: {'🟢 Connected' if health['inference_connection'] == 'healthy' else '🔴 Error'}")
-        st.sidebar.write(f"🔧 Mode: {health.get('inference_mode', 'unknown').upper()}")
-        
-        # PII Statistics
-        st.sidebar.markdown("### 📊 Today's PII Statistics")
-        
-        if privacy_stats:
-            for pii_type, count in privacy_stats.items():
-                st.sidebar.metric(f"{pii_type}", count)
-        else:
-            st.sidebar.write("No PII detected today")
-        
-        # Vault Summary
-        st.sidebar.markdown("### 🗄️ Vault Summary")
-        st.sidebar.metric("Total Mappings", vault_summary['total_mappings'])
-        
-        if vault_summary['type_breakdown']:
-            st.sidebar.markdown("**PII Types:**")
-            for pii_type, count in vault_summary['type_breakdown'].items():
-                st.sidebar.write(f"• {pii_type}: {count}")
+    """Render security dashboard in sidebar."""
+    if st.session_state.authenticated:
+        try:
         
         # Action Buttons
         st.sidebar.markdown("### ⚙️ Actions")
