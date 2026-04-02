@@ -486,11 +486,13 @@ def render_chat_interface():
         """)
     
     # Modern chat input widget
-    user_input = st.chat_input(
-        "Type your query here... PII will be automatically protected.",
-def render_analytics_tab():
-    """Render analytics and reporting tab."""
-    st.markdown("### 📊 Privacy Analytics & Reporting")
+    user_input = st.chat_input("Type your query here... PII will be automatically protected.")
+    
+    if user_input:
+        handle_query(user_input)
+        st.rerun()
+
+def main():
     
     if not st.session_state.authenticated:
         st.warning("Please login to access analytics.")
