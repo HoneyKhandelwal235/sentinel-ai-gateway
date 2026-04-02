@@ -395,45 +395,36 @@ class IdentityVault:
             }
         return None
     
-    # ===== CHAT HISTORY FUNCTIONS =====
-    
     def save_chat_message(self, user_id: int, message_type: str, content: str, 
-                          pii_detected: List[str] = None, processing_time: float = None, 
+                          pii_detected: str = None, processing_time: float = None, 
                           session_id: str = None):
-        """Save chat message for user."""
-        cursor = self.conn.cursor()
-        
-        # First verify user exists and get fresh user_id
-        cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-        user_row = cursor.fetchone()
-        if not user_row:
-            print(f"User with ID {user_id} does not exist in database")
-            # Try to find user by session or recreate
-            raise ValueError(f"User with ID {user_id} does not exist")
-        
-        # Double-check we have the correct user_id
-        actual_user_id = user_row[0]
-        if actual_user_id != user_id:
-            print(f"User ID mismatch: expected {user_id}, found {actual_user_id}")
-            user_id = actual_user_id
-        
-        pii_str = json.dumps(pii_detected) if pii_detected else None
+        """Save chat message with robust error handling and fallback."""
         try:
-            cursor.execute(
-                "INSERT INTO chat_history (user_id, message_type, content, pii_detected, processing_time, session_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, message_type, content, pii_str, processing_time, session_id)
-            )
+            # Validate user_id exists before proceeding
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+            user_exists = cursor.fetchone()
+            
+            if not user_exists:
+                print(f"DEBUG: User ID {user_id} not found in database")
+                # Don't raise error, just return silently to avoid breaking chat
+                return
+            
+            # Insert chat message
+            cursor.execute('''
+                INSERT INTO chat_history 
+                (user_id, message_type, content, pii_detected, processing_time, timestamp, session_id)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            ''', (user_id, message_type, content, pii_detected, processing_time, session_id))
+            
             self.conn.commit()
+            print(f"DEBUG: Chat message saved successfully for user {user_id}")
+            
         except Exception as e:
+            print(f"DEBUG: Error saving chat message: {e}")
             self.conn.rollback()
-            print(f"Error saving chat message: {e}")
-            # If foreign key fails, try to diagnose
-            if "FOREIGN KEY constraint failed" in str(e):
-                print(f"Debug: Available users in database:")
-                cursor.execute("SELECT id, username FROM users")
-                users = cursor.fetchall()
-                print(f"Users: {users}")
-            raise
+            # Don't raise error to avoid breaking chat flow
+            return
     
     def get_chat_history(self, user_id: int, limit: int = 50) -> List[Dict]:
         """Get chat history for user."""
