@@ -79,7 +79,15 @@ class PrivacyEngine:
             
             if not token:
                 # Provide a helpful local response when no token is available
-                return "I'm your privacy assistant, ready to help! I can assist with questions about data protection, PII detection, secure communication, and privacy best practices. What would you like to know about privacy and security?"
+                # Create a contextual response based on the user's query
+                if "aadhaar" in redacted_text.lower():
+                    return "I understand you're asking about Aadhaar details. For official Aadhaar updates, please visit the UIDAI website or your nearest Aadhaar center. I can help you understand PII protection while you handle your Aadhaar matters."
+                elif "phone" in redacted_text.lower() or "call" in redacted_text.lower():
+                    return "I understand you want to share contact information. Your phone number has been protected for privacy. I can help you with questions about secure communication and data protection."
+                elif "email" in redacted_text.lower():
+                    return "I see you're asking about email communication. Your email has been protected for privacy. I can assist with questions about secure email practices and data protection."
+                else:
+                    return "I'm your privacy assistant! I can help you with questions about data protection, PII detection, secure communication, and privacy best practices. While I'm using a fallback mode, I'm here to assist with your privacy-related questions."
             
             api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
             headers = {

@@ -296,7 +296,7 @@ def handle_query(user_input: str):
             try:
                 st.session_state.vault.save_chat_message(
                     user_id, "user", user_input, 
-                    list(mapping.keys()) if mapping else None, 
+                    ",".join(mapping.keys()) if mapping else None, 
                     processing_time, st.session_state.session_id
                 )
                 
