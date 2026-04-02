@@ -275,7 +275,8 @@ def handle_query(user_input: str):
                     response = "I understand your query about privacy and security. Let me help you with that."
             except Exception as ai_error:
                 print(f"AI Error: {ai_error}")
-                response = "I apologize, but I'm experiencing technical difficulties. However, I can still help you with privacy and security questions."
+                # Provide a helpful fallback response
+                response = "I'm your privacy assistant. I can help you with questions about data protection, PII detection, and secure communication. How can I assist you today?"
             
             # Restore PII in response if needed
             if mapping:
@@ -347,23 +348,32 @@ def handle_query(user_input: str):
             pass  # Ignore database errors - UI should not crash
 
 def render_chat_interface():
-    """Render the main chat interface with a UNIQUE key to prevent duplicate ID errors."""
+    """Render the main chat interface with proper message display."""
     st.markdown("### 💬 Secure AI Chat")
     
-    # 1. Load history
-    user_id = st.session_state.current_user['id']
-    chat_history = st.session_state.vault.get_chat_history(user_id)
+    # Display chat messages from session state (not database)
+    if 'chat_messages' in st.session_state and st.session_state.chat_messages:
+        for message in st.session_state.chat_messages:
+            if message['role'] == 'user':
+                st.markdown(f"👤 **You:** {message['content']}")
+            else:
+                st.markdown(f"🤖 **Assistant:** {message['content']}")
+            st.markdown("---")
+    else:
+        st.info("🔒 Start a secure conversation. Your PII will be automatically protected.")
     
-    # 2. Display history in a scrollable container
-    chat_container = st.container(height=400)
-    with chat_container:
-        for message in reversed(chat_history):
-            role = "👤 You" if message['message_type'] == 'user' else "🤖 AI"
-            st.write(f"**{role}:** {message['content']}")
-            if message.get('pii_detected'):
-                st.caption(f"🛡️ PII Redacted: {message['pii_detected']}")
-
-    # 3. THE FIX: Add a unique 'key' argument here
+    # Example queries section
+    with st.expander("💡 Example Queries"):
+        st.markdown("""
+        Try these examples to see PII protection in action:
+        
+        - "My email is john.doe@example.com and I need help with my account."
+        - "Call me at +91-9876543210 for any urgent matters."
+        - "My PAN number is ABCDE1234F and I need tax assistance."
+        - "My Aadhaar is 2345-6789-0123 and I want to update my details."
+        """)
+    
+    # Chat input with unique key
     user_input = st.chat_input(
         "Type your query here...", 
         key="main_chat_input_unique_123" 
@@ -371,6 +381,7 @@ def render_chat_interface():
     
     if user_input:
         handle_query(user_input)
+        st.rerun()
 
 def render_analytics_tab():
     """Render analytics dashboard with privacy statistics."""
