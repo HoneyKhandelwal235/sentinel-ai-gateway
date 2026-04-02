@@ -57,77 +57,70 @@ def load_custom_css():
         }
         .chat-message {
             padding: 1rem;
-            border-radius: 10px;
             margin: 0.5rem 0;
+            border-radius: 0.5rem;
         }
         .user-message {
             background-color: #e3f2fd;
-            border-left: 4px solid #2196f3;
+            border-left: 4px solid #1f77b4;
         }
         .ai-message {
-            background-color: #f3e5f5;
-            border-left: 4px solid #9c27b0;
+            background-color: #f1f3f4;
+            border-left: 4px solid #00d4aa;
         }
         .pii-detected {
-            background-color: #fff3e0;
-            border: 1px solid #ffcc02;
-            border-radius: 5px;
+            background-color: #fff4e6;
+            border: 1px solid #f8d7da;
             padding: 0.5rem;
             margin: 0.5rem 0;
-        }
-        .login-container {
-            max-width: 400px;
-            margin: 0 auto;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .auth-header {
-            text-align: center;
-            color: #1e3a8a;
-            margin-bottom: 2rem;
+            border-radius: 0.25rem;
         }
     </style>
     """, unsafe_allow_html=True)
 
+# Initialize session state
 def initialize_session_state():
-    """Initialize Streamlit session state variables."""
-    if 'vault' not in st.session_state:
-        st.session_state.vault = IdentityVault()
-    
-    if 'privacy_engine' not in st.session_state:
-        st.session_state.privacy_engine = None
-    
-    if 'current_user' not in st.session_state:
-        st.session_state.current_user = None
-    
+    """Initialize all session state variables."""
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
-    
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
+    if 'privacy_engine' not in st.session_state:
+        st.session_state.privacy_engine = None
+    if 'vault' not in st.session_state:
+        st.session_state.vault = IdentityVault()
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if 'session_stats' not in st.session_state:
         st.session_state.session_stats = {
             'queries_processed': 0,
             'pii_blocked': 0,
-            'total_processing_time': 0
+            'total_processing_time': 0.0
         }
+    if 'chat_messages' not in st.session_state:
+        st.session_state.chat_messages = []
 
+# Authentication functions
 def render_login_page():
-    """Render the login/signup page."""
-    st.markdown('<div class="auth-header"><h1>🔒 Sentinel AI Gateway</h1><p>Enterprise Privacy Protection</p></div>', unsafe_allow_html=True)
+    """Render the login page with authentication."""
+    st.markdown('<h1 class="main-header">🔒 AI Privacy Gateway</h1>', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["🔐 Login", "📝 Sign Up"])
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    with tab1:
-        with st.container():
-            st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    with col2:
+        st.markdown("### 🔐 Secure Login")
+        st.markdown("Access your private, AI-powered privacy dashboard.")
+        
+        with st.form("login_form"):
+            username = st.text_input("Username", placeholder="Enter your username")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            submit_button = st.form_submit_button("🔓 Login", use_container_width=True)
             
-            st.subheader("Login to Your Account")
-            username = st.text_input("Username", key="login_username")
-            password = st.text_input("Password", type="password", key="login_password")
-            
-            if st.button("🚀 Login", type="primary"):
+            if submit_button:
                 if username and password:
-                    user = st.session_state.vault.authenticate_user(username, password)
+                    vault = st.session_state.vault
+                    user = vault.authenticate_user(username, password)
+                    
                     if user:
                         st.session_state.current_user = user
                         st.session_state.authenticated = True
@@ -136,42 +129,31 @@ def render_login_page():
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error("Invalid username or password")
+                        st.error("❌ Invalid username or password. Please try again.")
                 else:
-                    st.warning("Please enter both username and password")
+                    st.error("⚠️ Please enter both username and password.")
+        
+        st.markdown("---")
+        st.markdown("### 📝 New User Registration")
+        
+        with st.form("register_form"):
+            new_username = st.text_input("New Username", placeholder="Choose a username", key="reg_username")
+            new_password = st.text_input("New Password", type="password", placeholder="Choose a password", key="reg_password")
+            email = st.text_input("Email (Optional)", placeholder="your.email@example.com", key="reg_email")
+            register_button = st.form_submit_button("🚀 Register", use_container_width=True)
             
-            st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tab2:
-        with st.container():
-            st.markdown('<div class="login-container">', unsafe_allow_html=True)
-            
-            st.subheader("Create New Account")
-            new_username = st.text_input("Username", key="signup_username")
-            new_email = st.text_input("Email (Optional)", key="signup_email")
-            new_password = st.text_input("Password", type="password", key="signup_password")
-            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
-            
-            if st.button("� Create Account", type="primary"):
+            if register_button:
                 if new_username and new_password:
-                    if new_password != confirm_password:
-                        st.error("Passwords do not match")
-                    elif len(new_password) < 6:
-                        st.error("Password must be at least 6 characters")
-                    else:
-                        success, message = st.session_state.vault.create_user(
-                            new_username, new_password, new_email if new_email else None
-                        )
-                        if success:
-                            st.success("Account created successfully! Please login.")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(message)
+                    vault = st.session_state.vault
+                    try:
+                        vault.add_user(new_username, new_password, email)
+                        st.success("✅ Registration successful! Please login with your new account.")
+                        time.sleep(1)
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"❌ Registration failed: {e}")
                 else:
-                    st.warning("Please fill in all required fields")
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+                    st.error("⚠️ Please fill in all required fields.")
 
 def render_logout_button():
     """Render logout button in sidebar."""
@@ -191,29 +173,22 @@ def render_user_info():
         st.sidebar.write(f"**Username:** {user['username']}")
         
         # Session Statistics
-        stats = st.session_state.get('session_stats', {
-            'queries_processed': 0,
-            'pii_blocked': 0,
-            'total_processing_time': 0.0
-        })
-        # Reset session stats
-        st.session_state.session_stats = {
-            'queries_processed': 0,
-            'pii_blocked': 0,
-            'total_processing_time': 0.0
-        }
+        stats = st.session_state.session_stats
+        st.sidebar.markdown(f"### 📊 Session Statistics")
+        st.sidebar.metric("Queries Processed", stats['queries_processed'])
+        st.sidebar.metric("PII Items Blocked", stats['pii_blocked'])
         
-        st.sidebar.success("✅ Cache cleared successfully!")
-        st.rerun()
-        
-        # Session stats
-        st.sidebar.markdown("### 📊 Session Statistics")
-        st.sidebar.metric("Queries Processed", st.session_state.session_stats['queries_processed'])
-        st.sidebar.metric("PII Items Blocked", st.session_state.session_stats['pii_blocked'])
-        
-        avg_time = (st.session_state.session_stats['total_processing_time'] / 
-                   max(1, st.session_state.session_stats['queries_processed']))
+        avg_time = (stats['total_processing_time'] / 
+                   max(1, stats['queries_processed']))
         st.sidebar.metric("Avg Processing Time", f"{avg_time:.2f}s")
+        
+        # Reset Session button
+        if st.sidebar.button("🔄 Reset Session", type="secondary"):
+            st.session_state.clear()
+            st.rerun()
+        
+        # Logout button
+        render_logout_button()
 
 def render_security_dashboard():
     """Render security dashboard in sidebar."""
@@ -224,7 +199,7 @@ def render_security_dashboard():
             privacy_stats = st.session_state.vault.get_privacy_stats(user_id)
             
             # Debug verification
-            st.sidebar.write("� Debug: Database Connected")
+            st.sidebar.write("🔧 Debug: Database Connected")
             st.sidebar.write("🔧 Debug: User Authenticated")
             
             # System Status
@@ -246,7 +221,7 @@ def render_security_dashboard():
             # Connection Status
             st.sidebar.markdown("#### Connections")
             st.sidebar.write(f"🤖 AI Model: {st.session_state.privacy_engine.model_name}")
-            st.sidebar.write(f"🗄️ Vault: {'� Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
+            st.sidebar.write(f"🗄️ Vault: {'🟢 Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
             st.sidebar.write(f"🌐 AI Service: {'🟢 Connected' if health['inference_connection'] == 'healthy' else '🔴 Error'}")
             st.sidebar.write(f"🔧 Mode: {health.get('inference_mode', 'unknown').upper()}")
             
@@ -372,30 +347,30 @@ def handle_query(user_input: str):
             pass  # Ignore database errors - UI should not crash
 
 def render_chat_interface():
-    """Render the main chat interface with message history and input."""
-    st.markdown("### 💬 Secure Chat")
+    """Render the main chat interface with a UNIQUE key to prevent duplicate ID errors."""
+    st.markdown("### 💬 Secure AI Chat")
     
-    # Display chat messages
-    if 'chat_messages' in st.session_state and st.session_state.chat_messages:
-        for message in st.session_state.chat_messages:
-            if message['role'] == 'user':
-                st.markdown(f"👤 **You:** {message['content']}")
-            else:
-                st.markdown(f"🤖 **Assistant:** {message['content']}")
-            st.markdown("---")
-    else:
-        st.info("🔒 Start a secure conversation. Your PII will be automatically protected.")
+    # 1. Load history
+    user_id = st.session_state.current_user['id']
+    chat_history = st.session_state.vault.get_chat_history(user_id)
     
-    # Example queries section
-    with st.expander("💡 Example Queries"):
-        st.markdown("""
-        Try these examples to see PII protection in action:
-        
-        - "My email is john.doe@example.com and I need help with my account."
-        - "Call me at +91-9876543210 for any urgent matters."
-        - "My PAN number is ABCDE1234F and I need tax assistance."
-        - "My Aadhaar is 2345-6789-0123 and I want to update my details."
-        """)
+    # 2. Display history in a scrollable container
+    chat_container = st.container(height=400)
+    with chat_container:
+        for message in reversed(chat_history):
+            role = "👤 You" if message['message_type'] == 'user' else "🤖 AI"
+            st.write(f"**{role}:** {message['content']}")
+            if message.get('pii_detected'):
+                st.caption(f"🛡️ PII Redacted: {message['pii_detected']}")
+
+    # 3. THE FIX: Add a unique 'key' argument here
+    user_input = st.chat_input(
+        "Type your query here...", 
+        key="main_chat_input_unique_123" 
+    )
+    
+    if user_input:
+        handle_query(user_input)
 
 def render_analytics_tab():
     """Render analytics dashboard with privacy statistics."""
@@ -445,156 +420,41 @@ def render_analytics_tab():
     except Exception as e:
         st.error(f"Error loading analytics: {e}")
 
-def render_chat_interface():
-    """Render the main chat interface with a UNIQUE key to prevent duplicate ID errors."""
-    st.markdown("### 💬 Secure AI Chat")
-    
-    # 1. Load history
-    user_id = st.session_state.current_user['id']
-    chat_history = st.session_state.vault.get_chat_history(user_id)
-    
-    # 2. Display history in a scrollable container
-    chat_container = st.container(height=400)
-    with chat_container:
-        for message in reversed(chat_history):
-            role = "👤 You" if message['message_type'] == 'user' else "🤖 AI"
-            st.write(f"**{role}:** {message['content']}")
-            if message.get('pii_detected'):
-                st.caption(f"🛡️ PII Redacted: {message['pii_detected']}")
-
-    # 3. THE FIX: Add a unique 'key' argument here
-    user_input = st.chat_input(
-        "Type your query here...", 
-        key="main_chat_input_unique_123" 
-    )
-    
-    if user_input:
-        handle_query(user_input)
-
-def main():
-    
-    if not st.session_state.authenticated:
-        st.warning("Please login to access analytics.")
-        return
-    
-    try:
-        user_id = st.session_state.current_user['id']
-        audit_data = st.session_state.vault.get_audit_log_for_user(user_id)
-        
-        if audit_data:
-            # Convert to DataFrame
-            df = pd.DataFrame(audit_data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            
-            # Create tabs for different analytics
-            tab1, tab2, tab3 = st.tabs(["📈 Activity Trends", "🔍 PII Analysis", "📋 Audit Report"])
-            
-            with tab1:
-                st.markdown("#### Recent Activity Trends")
-                
-                # Activity over time
-                activity_by_hour = df.groupby(df['timestamp'].dt.hour).size().reset_index()
-                activity_by_hour.columns = ['Hour', 'Count']
-                
-                fig = px.bar(
-                    activity_by_hour,
-                    x='Hour',
-                    y='Count',
-                    title="Privacy Operations by Hour",
-                    color='Count',
-                    color_continuous_scale='viridis'
-                )
-                st.plotly_chart(fig, width='stretch')
-                
-                # Operations breakdown
-                operation_counts = df['operation'].value_counts()
-                
-                fig2 = px.pie(
-                    values=operation_counts.values,
-                    names=operation_counts.index,
-                    title="Operation Types Distribution"
-                )
-                st.plotly_chart(fig2, width='stretch')
-            
-            # Sidebar with user info and actions
-            st.markdown("#### Export Options")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                csv_data = df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download CSV",
-                    data=csv_data,
-                    file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            
-            with col2:
-                json_data = json.dumps(audit_data, indent=2, default=str)
-                st.download_button(
-                    label="📥 Download JSON",
-                    data=json_data,
-                    file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
-                )
-                st.markdown("#### Export Options")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    csv_data = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download CSV",
-                        data=csv_data,
-                        file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    json_data = json.dumps(audit_data, indent=2, default=str)
-                    st.download_button(
-                        label="📥 Download JSON",
-                        data=json_data,
-                        file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json"
-                    )
-        
-        else:
-            st.info("No audit data available yet. Start using the chat interface to generate data.")
-    
-    except Exception as e:
-        st.error(f"Error loading analytics: {e}")
-
 def main():
     """Main application entry point."""
-    load_custom_css()
+    # Initialize session state
     initialize_session_state()
+    
+    # Load custom CSS
+    load_custom_css()
+    
+    # Page header
+    st.markdown('<h1 class="main-header">🔒 AI Privacy Gateway - Enterprise Security Solution</h1>', unsafe_allow_html=True)
     
     # Check authentication
     if not st.session_state.authenticated:
         render_login_page()
-        return
-    
-    # Create main layout with authenticated user
-    with st.sidebar:
+    else:
+        # Render sidebar with security dashboard
         render_security_dashboard()
-    
-    # Main content area with tabs
-    tab1, tab2 = st.tabs(["💬 Secure Chat", "📊 Analytics"])
-    
-    with tab1:
-        render_chat_interface()
-    
-    with tab2:
-        render_analytics_tab()
-    
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        f"<center><small>🔒 AI Privacy Gateway - Enterprise Security Solution | "
-        f"Logged in as: {st.session_state.current_user['username']} | "
-        "Powered by Ollama & Streamlit</small></center>",
-        unsafe_allow_html=True
-    )
+        
+        # Main content area with tabs
+        tab1, tab2 = st.tabs(["💬 Secure Chat", "📊 Analytics"])
+        
+        with tab1:
+            render_chat_interface()
+        
+        with tab2:
+            render_analytics_tab()
+        
+        # Footer
+        st.markdown("---")
+        st.markdown(
+            f"<center><small>🔒 AI Privacy Gateway - Enterprise Security Solution | "
+            f"Logged in as: {st.session_state.current_user['username']} | "
+            f"Powered by Hugging Face & Streamlit</small></center>",
+            unsafe_allow_html=True
+        )
 
 if __name__ == "__main__":
     main()
