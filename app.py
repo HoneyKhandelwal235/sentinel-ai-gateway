@@ -314,7 +314,7 @@ def handle_query(user_input: str):
             
             processing_time = time.time() - start_time
             
-            # Save messages to chat history (non-critical - don't fail if database has issues)
+            # Save messages to chat history (with database guard)
             try:
                 st.session_state.vault.save_chat_message(
                     user_id, "user", user_input, 
@@ -328,7 +328,7 @@ def handle_query(user_input: str):
                 )
             except Exception as db_error:
                 print(f"Database save error (non-critical): {db_error}")
-                # Continue even if database save fails
+                # Continue even if database save fails - UI should not crash
             
             # Update session stats
             stats = st.session_state.session_stats
@@ -360,7 +360,7 @@ def handle_query(user_input: str):
             {"role": "assistant", "content": error_response}
         ])
         
-        # Try to save to database (non-critical)
+        # Try to save to database (with database guard)
         try:
             st.session_state.vault.save_chat_message(
                 user_id, "user", user_input, None, 0, st.session_state.session_id
@@ -368,8 +368,9 @@ def handle_query(user_input: str):
             st.session_state.vault.save_chat_message(
                 user_id, "ai", error_response, None, 0, st.session_state.session_id
             )
-        except:
-            pass  # Ignore database errors in error handling
+        except Exception as db_error:
+            print(f"Database save error in error handling (non-critical): {db_error}")
+            pass  # Ignore database errors - UI should not crash
 
 def render_chat_interface():
     """Render the main chat interface with message history and input."""
