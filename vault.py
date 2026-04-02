@@ -21,6 +21,15 @@ class IdentityVault:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self._create_tables()
         
+        # Initialize Presidio with error handling
+        try:
+            self._initialize_presidio()
+        except Exception as e:
+            print(f"Warning: Presidio initialization failed: {e}")
+            # Set up basic patterns as fallback
+            self.analyzer = None
+            self.anonymizer = None
+        
         # Enhanced PII detection patterns
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.phone_pattern = re.compile(r'\+?91[-\s]?(\d{10}|\d{3}[-\s]?\d{3}[-\s]?\d{4})')
@@ -33,10 +42,24 @@ class IdentityVault:
         ]
         self.pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b')
         
-        # Initialize Presidio analyzer
-        self.analyzer = AnalyzerEngine()
-        self.anonymizer = AnonymizerEngine()
-        
+    def _initialize_presidio(self):
+        """Initialize Presidio analyzer and anonymizer with error handling."""
+        try:
+            from presidio_analyzer import AnalyzerEngine
+            from presidio_anonymizer import AnonymizerEngine
+            
+            self.analyzer = AnalyzerEngine()
+            self.anonymizer = AnonymizerEngine()
+            print("Presidio initialized successfully")
+        except ImportError as e:
+            print(f"Presidio not available: {e}")
+            self.analyzer = None
+            self.anonymizer = None
+        except Exception as e:
+            print(f"Presidio initialization error: {e}")
+            self.analyzer = None
+            self.anonymizer = None
+    
     def _create_tables(self):
         """Initialize SQLite database with required tables for multi-tenant architecture."""
         cursor = self.conn.cursor()
@@ -325,53 +348,9 @@ class IdentityVault:
             (username, password_hash, email)
         )
         self.conn.commit()
-        
-        return True, "User created successfully"
+        return True
     
-    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
-        """
-        Authenticate user with username and password.
-        Returns: User data if successful, None otherwise
-        """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id, username, password_hash, email, is_active FROM users WHERE username = ?",
-            (username,)
-        )
-        user = cursor.fetchone()
-        
-        if not user:
-            return None
-        
-        user_id, username, stored_hash, email, is_active = user
-        
-        if not is_active:
-            return None
-        
-        # Verify password
-        if self._verify_password(password, stored_hash):
-            # Update last login
-            cursor.execute(
-                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
-                (user_id,)
-            )
-            self.conn.commit()
-            
-            return {
-                "id": user_id,
-                "username": username,
-                "email": email,
-                "is_active": is_active
-            }
-        
-        return None
-    
-    def _hash_password(self, password: str) -> str:
-        """Hash password using SHA-256 with salt."""
-        salt = "sentinel_ai_gateway_salt_2024"  # In production, use random salt per user
-        return hashlib.sha256((password + salt).encode()).hexdigest()
-    
-    def _verify_password(self, password: str, hashed: str) -> bool:
+    def verify_password(self, password: str, hashed: str) -> bool:
         """Verify password against hash."""
         return self._hash_password(password) == hashed
     
