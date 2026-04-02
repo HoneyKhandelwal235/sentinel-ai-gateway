@@ -321,23 +321,24 @@ class IdentityVault:
     
     # ===== USER AUTHENTICATION FUNCTIONS =====
     
-    def create_user(self, username: str, password: str, email: str = None) -> Tuple[bool, str]:
+    def create_user(self, username: str, password: str, email: str = None) -> bool:
         """
         Create a new user with hashed password.
-        Returns: (success, message)
+        Raises ValueError on failure.
+        Returns True on success.
         """
         cursor = self.conn.cursor()
         
         # Check if username already exists
         cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
         if cursor.fetchone():
-            return False, "Username already exists"
+            raise ValueError("Username already exists")
         
         # Check if email already exists
         if email:
             cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
             if cursor.fetchone():
-                return False, "Email already exists"
+                raise ValueError("Email already exists")
         
         # Hash password
         password_hash = self._hash_password(password)
@@ -348,7 +349,7 @@ class IdentityVault:
             (username, password_hash, email)
         )
         self.conn.commit()
-        return True, "User created successfully"
+        return True
     
     def _hash_password(self, password: str) -> str:
         """Hash password using SHA-256 with salt."""
