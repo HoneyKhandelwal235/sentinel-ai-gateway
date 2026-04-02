@@ -451,53 +451,43 @@ def render_analytics_tab():
         
     except Exception as e:
         st.error(f"Error loading analytics: {e}")
-    chat_history = st.session_state.vault.get_chat_history(user_id)
+
+def render_chat_interface():
+    """Render the main chat interface with message history and input."""
+    st.markdown("### 💬 Secure Chat")
     
-    # Display chat history (in reverse order)
-    chat_container = st.container()
-    with chat_container:
-        for message in reversed(chat_history):
-            if message['message_type'] == 'user':
-                st.markdown(f"""
-                <div class="chat-message user-message">
-                    <strong>👤 You:</strong> {message['content']}
-                </div>
-                """, unsafe_allow_html=True)
+    # Display chat messages
+    if 'chat_messages' in st.session_state and st.session_state.chat_messages:
+        for message in st.session_state.chat_messages:
+            if message['role'] == 'user':
+                st.markdown(f"👤 **You:** {message['content']}")
             else:
-                st.markdown(f"""
-                <div class="chat-message ai-message">
-                    <strong>🤖 AI:</strong> {message['content']}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show PII detection info if available
-                if message.get('pii_detected'):
-                    st.markdown(f"""
-                    <div class="pii-detected">
-                        <strong>🔒 PII Protected:</strong> {', '.join(message['pii_detected'])}
-                    </div>
-                    """, unsafe_allow_html=True)
+                st.markdown(f"🤖 **Assistant:** {message['content']}")
+            st.markdown("---")
+    else:
+        st.info("🔒 Start a secure conversation. Your PII will be automatically protected.")
     
-    # Input area with modern chat widget
-    st.markdown("### 📝 Enter Your Query")
+    # Chat input
+    user_input = st.chat_input("Type your query here... PII will be automatically protected.")
     
-    # Example queries
+    if user_input:
+        handle_query(user_input)
+        st.rerun()
+    
+    # Example queries section
     with st.expander("💡 Example Queries"):
-        st.write("• My name is John Doe and my email is john@example.com. Can you help me?")
-        st.write("• I need to update my PAN number ABCDE1234F and phone +91-9876543210.")
-        st.write("• My Aadhaar is 2345 6789 0123. What documents do I need?")
-        st.write("• Contact me at priya.patel@company.com for business inquiry.")
+        st.markdown("""
+        Try these examples to see PII protection in action:
+        
+        - "My email is john.doe@example.com and I need help with my account."
+        - "Call me at +91-9876543210 for any urgent matters."
+        - "My PAN number is ABCDE1234F and I need tax assistance."
+        - "My Aadhaar is 2345-6789-0123 and I want to update my details."
+        """)
     
     # Modern chat input widget
     user_input = st.chat_input(
         "Type your query here... PII will be automatically protected.",
-        key="chat_input"
-    )
-    
-    # Handle user input through callback
-    if user_input:
-        handle_query(user_input)
-
 def render_analytics_tab():
     """Render analytics and reporting tab."""
     st.markdown("### 📊 Privacy Analytics & Reporting")
@@ -545,7 +535,27 @@ def render_analytics_tab():
                 )
                 st.plotly_chart(fig2, use_container_width=True)
             
-          # Sidebar with user info and actions
+            # Sidebar with user info and actions
+            st.markdown("#### Export Options")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv_data,
+                    file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            
+            with col2:
+                json_data = json.dumps(audit_data, indent=2, default=str)
+                st.download_button(
+                    label="📥 Download JSON",
+                    data=json_data,
+                    file_name=f"privacy_audit_{st.session_state.current_user['username']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
                 st.markdown("#### Export Options")
                 col1, col2 = st.columns(2)
                 
