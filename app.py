@@ -146,10 +146,13 @@ def render_login_page():
                 if new_username and new_password:
                     vault = st.session_state.vault
                     try:
-                        vault.add_user(new_username, new_password, email)
-                        st.success("✅ Registration successful! Please login with your new account.")
-                        time.sleep(1)
-                        st.rerun()
+                        success, message = vault.create_user(new_username, new_password, email)
+                        if success:
+                            st.success("✅ Registration successful! Please login with your new account.")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Registration failed: {message}")
                     except ValueError as e:
                         st.error(f"❌ Registration failed: {e}")
                 else:
