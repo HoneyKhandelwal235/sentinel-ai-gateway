@@ -387,13 +387,6 @@ def render_chat_interface():
     else:
         st.info("🔒 Start a secure conversation. Your PII will be automatically protected.")
     
-    # Chat input
-    user_input = st.chat_input("Type your query here... PII will be automatically protected.")
-    
-    if user_input:
-        handle_query(user_input)
-        st.rerun()
-    
     # Example queries section
     with st.expander("💡 Example Queries"):
         st.markdown("""
