@@ -348,7 +348,7 @@ class IdentityVault:
             (username, password_hash, email)
         )
         self.conn.commit()
-        return True
+        return True, "User created successfully"
     
     def _hash_password(self, password: str) -> str:
         """Hash password using SHA-256 with salt."""
