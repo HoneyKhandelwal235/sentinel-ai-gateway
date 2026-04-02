@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Dict, List
 import time
 import json
-from typing import Dict, List
 from engine import PrivacyEngine
 from vault import IdentityVault
 
@@ -435,7 +434,7 @@ def render_analytics_tab():
                 names=list(privacy_stats.keys()),
                 title="PII Types Detected"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         # Recent activity
         if chat_history:
@@ -505,7 +504,7 @@ def main():
                     color='Count',
                     color_continuous_scale='viridis'
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Operations breakdown
                 operation_counts = df['operation'].value_counts()
@@ -515,7 +514,7 @@ def main():
                     names=operation_counts.index,
                     title="Operation Types Distribution"
                 )
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
             
             # Sidebar with user info and actions
             st.markdown("#### Export Options")
