@@ -350,9 +350,44 @@ class IdentityVault:
         self.conn.commit()
         return True
     
+    def _hash_password(self, password: str) -> str:
+        """Hash password using SHA-256 with salt."""
+        import hashlib
+        salt = "sentinel_ai_gateway_salt"  # Fixed salt for consistency
+        return hashlib.sha256((password + salt).encode()).hexdigest()
+    
     def verify_password(self, password: str, hashed: str) -> bool:
         """Verify password against hash."""
         return self._hash_password(password) == hashed
+    
+    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
+        """Authenticate user with username and password."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, username, password_hash, email, is_active, created_at, last_login FROM users WHERE username = ?",
+            (username,)
+        )
+        user = cursor.fetchone()
+        
+        if user and user[4]:  # Check if user is active
+            stored_hash = user[2]
+            if self.verify_password(password, stored_hash):
+                # Update last login
+                cursor.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
+                    (user[0],)
+                )
+                self.conn.commit()
+                
+                return {
+                    "id": user[0],
+                    "username": user[1],
+                    "email": user[3],
+                    "is_active": user[4],
+                    "created_at": user[5],
+                    "last_login": user[6]
+                }
+        return None
     
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         """Get user information by ID."""
