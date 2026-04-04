@@ -257,14 +257,22 @@ def render_security_dashboard():
             
             # Determine overall status
             status_color = "status-healthy"
-            if health['vault_connection'] != "healthy" or health['inference_connection'] != "healthy":
+            vault_healthy = health['vault_connection'] == "healthy"
+            ai_healthy = health['inference_connection'] in ["healthy", "local_mode"]
+            model_available = health['model_available'] or health['inference_connection'] == "local_mode"
+            
+            if not vault_healthy:
                 status_color = "status-error"
-            elif health['model_available'] == False:
+            elif not ai_healthy:
                 status_color = "status-warning"
+            elif not model_available and health['inference_connection'] != "local_mode":
+                status_color = "status-warning"
+            
+            status_text = "🟢 Healthy" if status_color == "status-healthy" else "🟡 Warning" if status_color == "status-warning" else "🔴 Error"
             
             st.sidebar.markdown(f"""
             <div class="security-status {status_color}">
-                <strong>Overall Status:</strong> {'🟢 Healthy' if status_color == 'status-healthy' else '🟡 Warning' if status_color == 'status-warning' else '🔴 Error'}
+                <strong>Overall Status:</strong> {status_text}
             </div>
             """, unsafe_allow_html=True)
             
@@ -272,7 +280,15 @@ def render_security_dashboard():
             st.sidebar.markdown("#### Connections")
             st.sidebar.write(f"🤖 AI Model: {st.session_state.privacy_engine.model_name}")
             st.sidebar.write(f"🗄️ Vault: {'🟢 Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
-            st.sidebar.write(f"🌐 AI Service: {'🟢 Connected' if health['inference_connection'] == 'healthy' else '🔴 Error'}")
+            
+            # AI Service status with local mode handling
+            if health['inference_connection'] == 'local_mode':
+                st.sidebar.write("🌐 AI Service: � Local Mode")
+            elif health['inference_connection'] == 'healthy':
+                st.sidebar.write("🌐 AI Service: 🟢 Connected")
+            else:
+                st.sidebar.write(f"🌐 AI Service: 🔴 {health['inference_connection']}")
+            
             st.sidebar.write(f"🔧 Mode: {health.get('inference_mode', 'unknown').upper()}")
             
             # PII Statistics
