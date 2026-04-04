@@ -14,14 +14,11 @@ class IdentityVault:
     Supports persistent placeholder mapping and Indian ID detection (PAN/Aadhaar).
     """
     
-    def __init__(self, db_path: str = "identity_vault.db"):
-        """Initialize the identity vault with enhanced PII patterns."""
+    def __init__(self, db_path="identity_vault.db"):
+        """Initialize the identity vault with database connection."""
         self.db_path = db_path
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self._create_tables()
-        
-        # Initialize Presidio with error handling
+        self.conn = None
+        self._initialize_database()
         try:
             self._initialize_presidio()
         except Exception as e:
@@ -60,81 +57,96 @@ class IdentityVault:
             self.analyzer = None
             self.anonymizer = None
     
-    def _create_tables(self):
-        """Initialize SQLite database with required tables for multi-tenant architecture."""
-        cursor = self.conn.cursor()
-        
-        # Create Users Table FIRST (required for foreign keys)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                email TEXT UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1
-            )
-        ''')
-        
-        # Create PII Mappings Table (depends on users)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS pii_mappings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                placeholder TEXT UNIQUE NOT NULL,
-                real_value TEXT NOT NULL,
-                pii_type TEXT NOT NULL,
-                hash_value TEXT NOT NULL,
-                user_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_accessed TIMESTAMP,
-                access_count INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-        ''')
-        
-        # Create Audit Log Table (depends on users)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                operation TEXT NOT NULL,
-                pii_type TEXT,
-                placeholder TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                session_id TEXT,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-        ''')
-        
-        # Create Chat History Table (depends on users)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                message_type TEXT NOT NULL,
-                content TEXT NOT NULL,
-                pii_detected TEXT,
-                processing_time REAL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                session_id TEXT,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-        ''')
-        
-        # Create Privacy Stats Table (depends on users) - SIMPLIFIED VERSION
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS privacy_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT NOT NULL,
-                pii_type TEXT NOT NULL,
-                count INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-        ''')
-        
-        self.conn.commit()
+    def _initialize_database(self):
+        """Initialize database schema with proper connection handling."""
+        try:
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            cursor = self.conn.cursor()
+            
+            # Users table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    email TEXT UNIQUE,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP
+                )
+            ''')
+            
+            # PII mappings table with user isolation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pii_mappings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    session_id TEXT,
+                    placeholder TEXT NOT NULL,
+                    real_value TEXT NOT NULL,
+                    pii_type TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    UNIQUE(user_id, placeholder)
+                )
+            ''')
+            
+            # Chat history table with user isolation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    message_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    pii_detected TEXT,
+                    processing_time REAL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    session_id TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            ''')
+            
+            # Audit log table with user isolation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    operation TEXT NOT NULL,
+                    pii_type TEXT NOT NULL,
+                    placeholder TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    session_id TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            ''')
+            
+            # Privacy statistics table with user isolation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS privacy_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    pii_type TEXT NOT NULL,
+                    count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    UNIQUE(user_id, date, pii_type)
+                )
+            ''')
+            
+            self.conn.commit()
+        except Exception as e:
+            print(f"Database initialization error: {e}")
+            raise
+    
+    def _get_connection(self):
+        """Get database connection with retry logic."""
+        if self.conn is None:
+            self._initialize_database()
+        return self.conn
     
     def _generate_placeholder(self, pii_type: str) -> str:
         """Generate unique placeholder for PII."""
@@ -423,35 +435,40 @@ class IdentityVault:
         return None
     
     def save_chat_message(self, user_id: int, message_type: str, content: str, 
-                          pii_detected: str = None, processing_time: float = None, 
-                          session_id: str = None):
-        """Save chat message with robust error handling and fallback."""
-        try:
-            # Validate user_id exists before proceeding
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-            user_exists = cursor.fetchone()
-            
-            if not user_exists:
-                print(f"DEBUG: User ID {user_id} not found in database")
-                # Don't raise error, just return silently to avoid breaking chat
+                      pii_detected: str = None, processing_time: float = None, 
+                      session_id: str = None):
+        """Save chat message with robust error handling."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                # Verify user exists
+                cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+                user_exists = cursor.fetchone()
+                if not user_exists:
+                    return
+                
+                cursor.execute('''
+                    INSERT INTO chat_history 
+                    (user_id, message_type, content, pii_detected, processing_time, timestamp, session_id)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                ''', (user_id, message_type, content, pii_detected, processing_time, session_id))
+                conn.commit()
+                print(f"DEBUG: Chat message saved successfully for user {user_id}")
                 return
-            
-            # Insert chat message
-            cursor.execute('''
-                INSERT INTO chat_history 
-                (user_id, message_type, content, pii_detected, processing_time, timestamp, session_id)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-            ''', (user_id, message_type, content, pii_detected, processing_time, session_id))
-            
-            self.conn.commit()
-            print(f"DEBUG: Chat message saved successfully for user {user_id}")
-            
-        except Exception as e:
-            print(f"DEBUG: Error saving chat message: {e}")
-            self.conn.rollback()
-            # Don't raise error to avoid breaking chat flow
-            return
+                
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e) and attempt < max_retries - 1:
+                    time.sleep(0.1)  # Wait before retry
+                    continue
+                else:
+                    print(f"Database save error (attempt {attempt + 1}): {e}")
+                    return
+            except Exception as e:
+                print(f"Database save error (attempt {attempt + 1}): {e}")
+                return
     
     def get_chat_history(self, user_id: int, limit: int = 50) -> List[Dict]:
         """Get chat history for user."""
