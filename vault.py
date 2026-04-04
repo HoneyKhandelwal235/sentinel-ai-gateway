@@ -62,7 +62,8 @@ class IdentityVault:
         try:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
             self.conn.execute("PRAGMA foreign_keys = ON")
-            self.conn.execute("PRAGMA journal_mode = WAL")
+            # Remove WAL mode to prevent locking issues
+            self.conn.execute("PRAGMA journal_mode = DELETE")
             cursor = self.conn.cursor()
             
             # Users table
