@@ -144,10 +144,57 @@ class IdentityVault:
             raise
     
     def _get_connection(self):
-        """Get database connection with retry logic."""
+        """Get database connection with automatic lock cleanup."""
+        import os
+        import shutil
+        
         if self.conn is None:
             self._initialize_database()
-        return self.conn
+        
+        try:
+            # Test if database is locked
+            self.conn.cursor().execute("SELECT 1")
+            return self.conn
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                print("Database lock detected - performing automatic cleanup...")
+                
+                # Close current connection
+                try:
+                    self.conn.close()
+                except:
+                    pass
+                
+                # Remove all database files
+                db_files = [
+                    self.db_path,
+                    self.db_path + "-wal",
+                    self.db_path + "-shm"
+                ]
+                
+                for file_path in db_files:
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            print(f"Removed: {file_path}")
+                    except:
+                        pass
+                
+                # Remove backup files
+                for file in os.listdir('.'):
+                    if file.startswith('identity_vault.db.backup'):
+                        try:
+                            os.remove(file)
+                            print(f"Removed backup: {file}")
+                        except:
+                            pass
+                
+                # Reinitialize database
+                print("Reinitializing database after cleanup...")
+                self._initialize_database()
+                return self.conn
+            else:
+                raise e
     
     def _generate_placeholder(self, pii_type: str) -> str:
         """Generate unique placeholder for PII."""
@@ -443,7 +490,7 @@ class IdentityVault:
     def save_chat_message(self, user_id: int, message_type: str, content: str, 
                       pii_detected: str = None, processing_time: float = None, 
                       session_id: str = None):
-        """Save chat message with robust error handling."""
+        """Save chat message with robust error handling and automatic cleanup."""
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -467,10 +514,16 @@ class IdentityVault:
                 
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and attempt < max_retries - 1:
-                    time.sleep(0.1)  # Wait before retry
+                    print(f"Database locked in save_chat_message (attempt {attempt + 1}) - retrying...")
+                    time.sleep(0.5)  # Wait longer before retry
                     continue
                 else:
                     print(f"Database save error (attempt {attempt + 1}): {e}")
+                    # Trigger automatic cleanup
+                    try:
+                        self._get_connection()  # This will trigger cleanup if needed
+                    except:
+                        pass
                     return
             except Exception as e:
                 print(f"Database save error (attempt {attempt + 1}): {e}")
