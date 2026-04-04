@@ -334,11 +334,14 @@ class IdentityVault:
         if cursor.fetchone():
             raise ValueError("Username already exists")
         
-        # Check if email already exists
-        if email:
+        # Check if email already exists (only if email is provided and not empty)
+        if email and email.strip() and email != "your.email@example.com":
             cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
             if cursor.fetchone():
                 raise ValueError("Email already exists")
+        elif email == "your.email@example.com":
+            # Allow placeholder email for testing
+            email = None
         
         # Hash password
         password_hash = self._hash_password(password)
@@ -389,6 +392,15 @@ class IdentityVault:
                     "last_login": user[6]
                 }
         return None
+    
+    def clear_all_data(self):
+        """Clear all data from database for testing purposes."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM chat_history")
+        cursor.execute("DELETE FROM audit_log")
+        cursor.execute("DELETE FROM privacy_stats")
+        cursor.execute("DELETE FROM users")
+        self.conn.commit()
     
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         """Get user information by ID."""

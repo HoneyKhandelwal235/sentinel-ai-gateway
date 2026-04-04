@@ -201,6 +201,15 @@ def render_user_info():
             st.session_state.clear()
             st.rerun()
         
+        # Clear Database button (for testing)
+        if st.sidebar.button("🗑️ Clear Database", type="secondary", help="Clear all users and data for testing"):
+            try:
+                st.session_state.vault.clear_all_data()
+                st.session_state.clear()
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Error clearing database: {e}")
+        
         # Logout button
         render_logout_button()
 
