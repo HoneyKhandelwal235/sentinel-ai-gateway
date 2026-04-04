@@ -40,9 +40,11 @@ class PrivacyEngine:
             else:
                 self.logger.warning("No API token found, running in local mode")
                 self.client = None
+                self.connection_message = "⚠️ Connection Pending: Please add API Key to Secrets"
         except Exception as e:
             self.logger.error(f"Failed to initialize InferenceClient: {e}")
             self.client = None
+            self.connection_message = f"⚠️ Connection Error: {str(e)}"
     
     def process_query(self, query: str) -> str:
         """Process user query through HuggingFace InferenceClient."""
@@ -50,23 +52,23 @@ class PrivacyEngine:
             if not self.client:
                 return self._get_local_response(query)
             
-            # Create a proper chat message format
-            messages = [
-                {"role": "system", "content": "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."},
-                {"role": "user", "content": query}
-            ]
+            # Create a proper prompt for text generation
+            system_prompt = "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."
+            prompt = f"{system_prompt}\n\nUSER: {query}\nASSISTANT:"
             
-            # Use the InferenceClient with auto-retry
-            response = self.client.chat_completion(
-                messages=messages,
-                max_tokens=500,
+            # Use text_generation with explicit model to avoid auto-router error
+            response = self.client.text_generation(
+                prompt=prompt,
+                model='meta-llama/Llama-3.2-1B-Instruct',
+                max_new_tokens=500,
                 temperature=0.7,
-                stream=False
+                do_sample=True,
+                return_full_text=False
             )
             
-            # Extract the assistant's response
-            if response and response.choices:
-                return response.choices[0].message.content.strip()
+            # Clean up the response
+            if response:
+                return response.strip()
             else:
                 return "I understand your privacy-related question. Let me help you with that."
                 
@@ -107,6 +109,10 @@ class PrivacyEngine:
             "timestamp": datetime.now().isoformat()
         }
         
+        # Add connection message if available
+        if hasattr(self, 'connection_message'):
+            health_status["connection_message"] = self.connection_message
+        
         try:
             test_text = "Test email: test@example.com"
             redacted, mapping = self.vault.redact_with_mapping(test_text, 1, "health_check")
@@ -119,8 +125,9 @@ class PrivacyEngine:
         if self.client:
             try:
                 # Simple test query
-                test_response = self.client.chat_completion(
-                    messages=[{"role": "user", "content": "Hello"}],
+                test_response = self.client.text_generation(
+                    prompt="Hello",
+                    model='meta-llama/Llama-3.2-1B-Instruct',
                     max_tokens=10,
                     temperature=0.1
                 )

@@ -290,17 +290,22 @@ class IdentityVault:
         self.conn.commit()
     
     def get_privacy_stats(self, user_id: int) -> Dict[str, int]:
-        """Get current privacy statistics for a specific user."""
-        cursor = self.conn.cursor()
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        cursor.execute(
-            "SELECT pii_type, count FROM privacy_stats WHERE date = ? AND user_id = ?",
-            (today, user_id)
-        )
-        
-        stats = {row[0]: row[1] for row in cursor.fetchall()}
-        return stats
+        """Get current privacy statistics for a specific user with robust error handling."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            cursor.execute(
+                "SELECT pii_type, count FROM privacy_stats WHERE date = ? AND user_id = ?",
+                (today, user_id)
+            )
+            
+            stats = {row[0]: row[1] for row in cursor.fetchall()}
+            return stats
+        except Exception as e:
+            print(f"Error getting privacy stats: {e}")
+            return {}  # Return empty dict instead of crashing
     
     def get_vault_summary(self, user_id: int) -> Dict:
         """Get comprehensive vault summary for a specific user."""

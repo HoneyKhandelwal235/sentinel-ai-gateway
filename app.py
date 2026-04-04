@@ -283,7 +283,10 @@ def render_security_dashboard():
             
             # AI Service status with local mode handling
             if health['inference_connection'] == 'local_mode':
-                st.sidebar.write("🌐 AI Service: � Local Mode")
+                if 'connection_message' in health:
+                    st.sidebar.write(f"🌐 AI Service: {health['connection_message']}")
+                else:
+                    st.sidebar.write("🌐 AI Service: 🟡 Local Mode")
             elif health['inference_connection'] == 'healthy':
                 st.sidebar.write("🌐 AI Service: 🟢 Connected")
             else:
