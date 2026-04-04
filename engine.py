@@ -31,16 +31,23 @@ class PrivacyEngine:
         try:
             token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
             if token:
-                self.client = InferenceClient(
-                    model=self.model_name,
-                    token=token,
-                    timeout=60
-                )
-                self.logger.info(f"InferenceClient initialized with model: {self.model_name}")
+                # Check if it's a valid HuggingFace token (starts with hf_)
+                if token.startswith('hf_'):
+                    self.client = InferenceClient(
+                        model=self.model_name,
+                        token=token,
+                        timeout=60
+                    )
+                    self.logger.info(f"InferenceClient initialized with model: {self.model_name}")
+                else:
+                    # Non-HuggingFace token - don't initialize client
+                    self.logger.warning("Non-HuggingFace API key detected, running in local mode")
+                    self.client = None
+                    self.connection_message = "⚠️ Invalid API Key: Please use HuggingFace token (starts with hf_)"
             else:
                 self.logger.warning("No API token found, running in local mode")
                 self.client = None
-                self.connection_message = "⚠️ Connection Pending: Please add API Key to Secrets"
+                self.connection_message = "⚠️ Connection Pending: Please add HuggingFace API Key to Secrets"
         except Exception as e:
             self.logger.error(f"Failed to initialize InferenceClient: {e}")
             self.client = None
@@ -102,8 +109,8 @@ class PrivacyEngine:
         """Perform health check of the privacy engine."""
         health_status = {
             "vault_connection": "healthy",
-            "inference_connection": "healthy" if self.client else "local_mode",
-            "model_available": True if self.client else False,
+            "inference_connection": "local_mode",
+            "model_available": False,
             "inference_mode": self.inference_mode,
             "timestamp": datetime.now().isoformat()
         }
@@ -120,7 +127,7 @@ class PrivacyEngine:
         except Exception as e:
             health_status["vault_connection"] = f"unhealthy: {e}"
         
-        # Test AI connection
+        # Test AI connection only if we have a valid client
         if self.client:
             try:
                 # Simple test query
@@ -135,7 +142,16 @@ class PrivacyEngine:
                 health_status["inference_connection"] = f"unhealthy: {e}"
                 health_status["model_available"] = False
         else:
-            health_status["inference_connection"] = "local_mode"
+            # No client - check if we have a valid reason
+            if hasattr(self, 'connection_message'):
+                if "Invalid API Key" in self.connection_message:
+                    health_status["inference_connection"] = "invalid_key"
+                elif "Connection Pending" in self.connection_message:
+                    health_status["inference_connection"] = "no_key"
+                else:
+                    health_status["inference_connection"] = "local_mode"
+            else:
+                health_status["inference_connection"] = "local_mode"
             health_status["model_available"] = False
         
         return health_status

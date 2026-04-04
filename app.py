@@ -258,15 +258,22 @@ def render_security_dashboard():
             # Determine overall status
             status_color = "status-healthy"
             vault_healthy = health['vault_connection'] == "healthy"
-            ai_healthy = health['inference_connection'] in ["healthy", "local_mode"]
-            model_available = health['model_available'] or health['inference_connection'] == "local_mode"
+            
+            # Check AI connection status
+            ai_status = health['inference_connection']
+            if ai_status == 'healthy':
+                ai_healthy = True
+            elif ai_status in ['local_mode', 'no_key']:
+                ai_healthy = True  # These are expected states
+            elif ai_status == 'invalid_key':
+                ai_healthy = False  # This is an error state
+            else:
+                ai_healthy = False  # Any other state is an error
             
             if not vault_healthy:
                 status_color = "status-error"
             elif not ai_healthy:
-                status_color = "status-warning"
-            elif not model_available and health['inference_connection'] != "local_mode":
-                status_color = "status-warning"
+                status_color = "status-warning" if ai_status in ['local_mode', 'no_key'] else "status-error"
             
             status_text = "🟢 Healthy" if status_color == "status-healthy" else "🟡 Warning" if status_color == "status-warning" else "🔴 Error"
             
@@ -281,12 +288,16 @@ def render_security_dashboard():
             st.sidebar.write(f"🤖 AI Model: {st.session_state.privacy_engine.model_name}")
             st.sidebar.write(f"🗄️ Vault: {'🟢 Connected' if health['vault_connection'] == 'healthy' else '🔴 Error'}")
             
-            # AI Service status with local mode handling
+            # AI Service status with proper error handling
             if health['inference_connection'] == 'local_mode':
                 if 'connection_message' in health:
                     st.sidebar.write(f"🌐 AI Service: {health['connection_message']}")
                 else:
                     st.sidebar.write("🌐 AI Service: 🟡 Local Mode")
+            elif health['inference_connection'] == 'invalid_key':
+                st.sidebar.write("🌐 AI Service: 🔴 Invalid API Key (use hf_ token)")
+            elif health['inference_connection'] == 'no_key':
+                st.sidebar.write("🌐 AI Service: 🟡 Add HuggingFace API Key")
             elif health['inference_connection'] == 'healthy':
                 st.sidebar.write("🌐 AI Service: 🟢 Connected")
             else:
