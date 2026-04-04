@@ -10,7 +10,8 @@ from vault import IdentityVault
 
 # Verify API Token at startup
 try:
-    if 'HUGGINGFACE_API_TOKEN' not in st.secrets:
+    token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
+    if not token:
         st.warning('Running in Local Mode - AI response will be simulated')
 except Exception as e:
     st.warning(f'Secrets access issue: {e}. Running in Local Mode.')
