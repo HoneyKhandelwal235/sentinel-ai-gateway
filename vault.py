@@ -354,7 +354,7 @@ class IdentityVault:
     def _hash_password(self, password: str) -> str:
         """Hash password using SHA-256 with salt."""
         import hashlib
-        salt = "sentinel_ai_gateway_salt"  # Fixed salt for consistency
+        salt = "sentinel_ai_gateway_salt_2024"  # Fixed salt for consistency
         return hashlib.sha256((password + salt).encode()).hexdigest()
     
     def verify_password(self, password: str, hashed: str) -> bool:
