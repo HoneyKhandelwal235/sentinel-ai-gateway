@@ -59,7 +59,6 @@ class PrivacyEngine:
             # Use text_generation with explicit model to avoid auto-router error
             response = self.client.text_generation(
                 prompt=prompt,
-                model='meta-llama/Llama-3.2-1B-Instruct',
                 max_new_tokens=500,
                 temperature=0.7,
                 do_sample=True,
@@ -127,8 +126,7 @@ class PrivacyEngine:
                 # Simple test query
                 test_response = self.client.text_generation(
                     prompt="Hello",
-                    model='meta-llama/Llama-3.2-1B-Instruct',
-                    max_tokens=10,
+                    max_new_tokens=10,
                     temperature=0.1
                 )
                 health_status["inference_connection"] = "healthy"
