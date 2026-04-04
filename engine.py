@@ -52,22 +52,22 @@ class PrivacyEngine:
             if not self.client:
                 return self._get_local_response(query)
             
-            # Create a proper prompt for text generation
-            system_prompt = "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."
-            prompt = f"{system_prompt}\n\nUSER: {query}\nASSISTANT:"
+            # Use chat_completion instead of text_generation
+            messages = [
+                {"role": "system", "content": "You are a Privacy-First Assistant. You will receive text containing placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security."},
+                {"role": "user", "content": query}
+            ]
             
-            # Use text_generation with explicit model to avoid auto-router error
-            response = self.client.text_generation(
-                prompt=prompt,
-                max_new_tokens=500,
-                temperature=0.7,
-                do_sample=True,
-                return_full_text=False
+            # Use chat_completion for conversational models
+            response = self.client.chat_completion(
+                messages=messages,
+                max_tokens=500,
+                temperature=0.7
             )
             
-            # Clean up the response
-            if response:
-                return response.strip()
+            # Extract the assistant's response
+            if response and response.choices:
+                return response.choices[0].message.content.strip()
             else:
                 return "I understand your privacy-related question. Let me help you with that."
                 
@@ -124,9 +124,9 @@ class PrivacyEngine:
         if self.client:
             try:
                 # Simple test query
-                test_response = self.client.text_generation(
-                    prompt="Hello",
-                    max_new_tokens=10,
+                test_response = self.client.chat_completion(
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=10,
                     temperature=0.1
                 )
                 health_status["inference_connection"] = "healthy"
