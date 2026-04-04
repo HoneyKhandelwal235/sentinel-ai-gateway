@@ -31,8 +31,8 @@ class PrivacyEngine:
         try:
             token = st.secrets.get('HUGGINGFACE_API_TOKEN', '')
             if token:
-                # Check if it's a valid HuggingFace token (starts with hf_)
-                if token.startswith('hf_'):
+                # Check if it's a valid HuggingFace token (starts with hf_) and not a placeholder
+                if token.startswith('hf_') and len(token) > 10 and 'your_' not in token and 'token' not in token:
                     self.client = InferenceClient(
                         model=self.model_name,
                         token=token,
@@ -40,10 +40,10 @@ class PrivacyEngine:
                     )
                     self.logger.info(f"InferenceClient initialized with model: {self.model_name}")
                 else:
-                    # Non-HuggingFace token - don't initialize client
-                    self.logger.warning("Non-HuggingFace API key detected, running in local mode")
+                    # Invalid or placeholder token - don't initialize client
+                    self.logger.warning(f"Invalid/placeholder API key detected: {token[:10]}...")
                     self.client = None
-                    self.connection_message = "⚠️ Invalid API Key: Please use HuggingFace token (starts with hf_)"
+                    self.connection_message = "⚠️ Invalid API Key: Please use real HuggingFace token (starts with hf_)"
             else:
                 self.logger.warning("No API token found, running in local mode")
                 self.client = None
@@ -119,11 +119,11 @@ class PrivacyEngine:
         if hasattr(self, 'connection_message'):
             health_status["connection_message"] = self.connection_message
         
+        # Test vault functionality with a simple query that doesn't require user
         try:
-            test_text = "Test email: test@example.com"
-            redacted, mapping = self.vault.redact_with_mapping(test_text, 1, "health_check")
-            health_status["vault_functionality"] = "healthy"
-            
+            cursor = self.vault._get_connection()
+            cursor.execute("SELECT 1")
+            health_status["vault_connection"] = "healthy"
         except Exception as e:
             health_status["vault_connection"] = f"unhealthy: {e}"
         

@@ -88,6 +88,7 @@ class IdentityVault:
                     placeholder TEXT NOT NULL,
                     real_value TEXT NOT NULL,
                     pii_type TEXT NOT NULL,
+                    hash_value TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id),
