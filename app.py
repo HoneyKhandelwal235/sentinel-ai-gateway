@@ -9,9 +9,11 @@ from engine import PrivacyEngine
 from vault import IdentityVault
 
 # Verify API Token at startup
-if 'HUGGINGFACE_API_TOKEN' not in st.secrets:
-    st.error('CRITICAL: API Token Missing in Space Settings')
-    st.stop()
+try:
+    if 'HUGGINGFACE_API_TOKEN' not in st.secrets:
+        st.warning('Running in Local Mode - AI response will be simulated')
+except Exception as e:
+    st.warning(f'Secrets access issue: {e}. Running in Local Mode.')
 
 # Custom CSS for professional styling
 def load_custom_css():
