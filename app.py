@@ -109,61 +109,87 @@ def initialize_session_state():
 
 # Authentication functions
 def render_login_page():
-    """Render the login page with authentication."""
+    """Render the professional login page with dynamic authentication UI."""
     st.markdown('<h1 class="main-header">🔒 AI Privacy Gateway</h1>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("### 🔐 Secure Login")
-        st.markdown("Access your private, AI-powered privacy dashboard.")
+        # Initialize auth mode state
+        if 'auth_mode' not in st.session_state:
+            st.session_state.auth_mode = 'login'
         
-        with st.form("login_form"):
-            username = st.text_input("Username", placeholder="Enter your username")
-            password = st.text_input("Password", type="password", placeholder="Enter your password")
-            submit_button = st.form_submit_button("🔓 Login", use_container_width=True)
-            
-            if submit_button:
-                if username and password:
-                    vault = st.session_state.vault
-                    user = vault.authenticate_user(username, password)
+        # Professional container
+        with st.container():
+            if st.session_state.auth_mode == 'login':
+                # Login View
+                st.markdown("### 🔐 Login to Your Account")
+                st.markdown("Access your private, AI-powered privacy dashboard.")
+                
+                with st.form("login_form"):
+                    username = st.text_input("Username", placeholder="Enter your username")
+                    password = st.text_input("Password", type="password", placeholder="Enter your password")
+                    submit_button = st.form_submit_button("🔓 Login", use_container_width=True)
                     
-                    if user:
-                        st.session_state.current_user = user
-                        st.session_state.authenticated = True
-                        st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
-                        st.success(f"Welcome back, {user['username']}!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("❌ Invalid username or password. Please try again.")
-                else:
-                    st.error("⚠️ Please enter both username and password.")
-        
-        st.markdown("---")
-        st.markdown("### 📝 New User Registration")
-        
-        with st.form("register_form"):
-            new_username = st.text_input("New Username", placeholder="Choose a username", key="reg_username")
-            new_password = st.text_input("New Password", type="password", placeholder="Choose a password", key="reg_password")
-            email = st.text_input("Email (Optional)", placeholder="your.email@example.com", key="reg_email")
-            register_button = st.form_submit_button("🚀 Register", use_container_width=True)
-            
-            if register_button:
-                if new_username and new_password:
-                    vault = st.session_state.vault
-                    try:
-                        # Try to create user and handle any exceptions
-                        vault.create_user(new_username, new_password, email)
-                        st.success("✅ Registration successful! Please login with your new account.")
-                        time.sleep(1)
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(f"❌ Registration failed: {e}")
-                    except Exception as e:
-                        st.error(f"❌ Registration failed: {e}")
-                else:
-                    st.error("⚠️ Please fill in all required fields.")
+                    if submit_button:
+                        if username and password:
+                            vault = st.session_state.vault
+                            user = vault.authenticate_user(username, password)
+                            
+                            if user:
+                                st.session_state.current_user = user
+                                st.session_state.authenticated = True
+                                st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
+                                st.success(f"Welcome back, {user['username']}!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Invalid username or password. Please try again.")
+                        else:
+                            st.error("⚠️ Please enter both username and password.")
+                
+                # Toggle to Sign Up
+                st.markdown("---")
+                st.markdown('<div style="text-align: center;">', unsafe_allow_html=True)
+                if st.button("New user? Create an account", use_container_width=True):
+                    st.session_state.auth_mode = 'signup'
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+            else:
+                # Sign Up View
+                st.markdown("### 📝 Create Your Account")
+                st.markdown("Join our secure privacy protection platform.")
+                
+                with st.form("register_form"):
+                    new_username = st.text_input("New Username", placeholder="Choose a username")
+                    new_password = st.text_input("New Password", type="password", placeholder="Choose a strong password")
+                    email = st.text_input("Email (Optional)", placeholder="your.email@example.com")
+                    register_button = st.form_submit_button("🚀 Create Account", use_container_width=True)
+                    
+                    if register_button:
+                        if new_username and new_password:
+                            vault = st.session_state.vault
+                            try:
+                                vault.create_user(new_username, new_password, email)
+                                st.success("✅ Account created successfully! Please login with your new credentials.")
+                                time.sleep(2)
+                                st.session_state.auth_mode = 'login'
+                                st.rerun()
+                            except ValueError as e:
+                                st.error(f"❌ Registration failed: {e}")
+                            except Exception as e:
+                                st.error(f"❌ Registration failed: {e}")
+                        else:
+                            st.error("⚠️ Please fill in all required fields.")
+                
+                # Toggle to Login
+                st.markdown("---")
+                st.markdown('<div style="text-align: center;">', unsafe_allow_html=True)
+                if st.button("Already have an account? Login", use_container_width=True):
+                    st.session_state.auth_mode = 'login'
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
 def render_logout_button():
     """Render logout button in sidebar."""
