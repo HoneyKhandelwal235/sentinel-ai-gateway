@@ -8,6 +8,11 @@ import json
 from engine import PrivacyEngine
 from vault import IdentityVault
 
+# Verify API Token at startup
+if 'HUGGINGFACE_API_TOKEN' not in st.secrets:
+    st.error('CRITICAL: API Token Missing in Space Settings')
+    st.stop()
+
 # Custom CSS for professional styling
 def load_custom_css():
     st.markdown("""
