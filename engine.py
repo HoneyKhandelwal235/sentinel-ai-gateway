@@ -53,11 +53,13 @@ class PrivacyEngine:
             self.client = None
             self.connection_message = f"⚠️ Connection Error: {str(e)}"
     
-    def process_query(self, query: str) -> str:
+    def process_query(self, query: str, original_query: str = None) -> str:
         """Process user query through HuggingFace InferenceClient."""
+        # Use original_query for fallback, or current query if not provided
+        fallback_query = original_query or query
         try:
             if not self.client:
-                return self._get_local_response(query)
+                return self._get_local_response(fallback_query)
             
             # Use chat_completion instead of text_generation
             messages = [
@@ -88,7 +90,7 @@ class PrivacyEngine:
             except:
                 pass
             
-            return self._get_local_response(query)
+            return self._get_local_response(fallback_query)
     
     def _get_local_response(self, query: str) -> str:
         """Get contextual response when API is not available."""

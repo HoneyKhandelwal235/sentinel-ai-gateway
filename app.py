@@ -351,7 +351,8 @@ def handle_query(user_input: str):
             # Get AI response (always provide fallback)
             try:
                 st.sidebar.write(f"DEBUG: Processing query: {redacted_text}")
-                response = st.session_state.privacy_engine.process_query(redacted_text)
+                # Pass both redacted and original query to engine
+                response = st.session_state.privacy_engine.process_query(redacted_text, original_query=user_input)
                 st.sidebar.write(f"DEBUG: AI Response: {response}")
                 if not response or response.strip() == "":
                     response = "I understand your query about privacy and security. Let me help you with that."
