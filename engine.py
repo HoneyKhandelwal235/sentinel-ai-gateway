@@ -67,22 +67,34 @@ class PrivacyEngine:
                 {"role": "user", "content": query}
             ]
             
-            # Use chat_completion for conversational models
+            # Create clean prompt for better AI responses
+            prompt = f"""
+User query: {query}
+
+You are a Privacy-First Assistant. The user's query may contain placeholders like [PERSON_1] or [AADHAAR_1]. These are safe tokens representing protected information. Do not refuse to process them. Use these tokens in your response exactly as they are. You do not have access to real data, and that is intentional for security.
+
+Respond helpfully and safely about privacy and data protection.
+"""
+            
+            # Use text_generation for better model compatibility
             print("DEBUG: Sending request to HuggingFace API...")
-            response = self.client.chat_completion(
-                messages=messages,
-                max_tokens=500,
-                temperature=0.7
+            print("DEBUG: PROMPT:", prompt[:200] + "..." if len(prompt) > 200 else prompt)
+            response = self.client.text_generation(
+                prompt=prompt,
+                max_new_tokens=200,
+                temperature=0.7,
+                do_sample=True,
+                return_full_text=False
             )
             print("AI RAW RESPONSE:", response)
             
             # Extract the assistant's response
-            if response and response.choices:
-                content = response.choices[0].message.content.strip()
+            if response and response.strip():
+                content = response.strip()
                 print("AI EXTRACTED CONTENT:", content)
                 return content
             else:
-                print("DEBUG: No choices in response, using fallback")
+                print("DEBUG: Empty response, using fallback")
                 return "I understand your privacy-related question. Let me help you with that."
                 
         except Exception as e:
