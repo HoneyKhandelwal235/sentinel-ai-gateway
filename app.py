@@ -350,18 +350,12 @@ def handle_query(user_input: str):
             
             # Get AI response (always provide fallback)
             try:
-                st.sidebar.write(f"DEBUG: Processing query: {redacted_text}")
                 # Pass both redacted and original query to engine
                 response = st.session_state.privacy_engine.process_query(redacted_text, original_query=user_input)
-                st.sidebar.write(f"DEBUG: AI Response: {response}")
                 if not response or response.strip() == "":
                     response = "I understand your query about privacy and security. Let me help you with that."
-                    st.sidebar.write("DEBUG: Empty response, using fallback")
             except Exception as ai_error:
-                st.sidebar.write(f"DEBUG: AI Error: {ai_error}")
                 print(f"AI Error: {ai_error}")
-                import traceback
-                st.sidebar.write(f"DEBUG: Traceback: {traceback.format_exc()}")
                 # Provide a helpful fallback response
                 response = "I'm your privacy assistant. I can help you with questions about data protection, PII detection, and secure communication. How can I assist you today?"
             
