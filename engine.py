@@ -68,21 +68,28 @@ class PrivacyEngine:
             ]
             
             # Use chat_completion for conversational models
+            print("DEBUG: Sending request to HuggingFace API...")
             response = self.client.chat_completion(
                 messages=messages,
                 max_tokens=500,
                 temperature=0.7
             )
+            print("AI RAW RESPONSE:", response)
             
             # Extract the assistant's response
             if response and response.choices:
-                return response.choices[0].message.content.strip()
+                content = response.choices[0].message.content.strip()
+                print("AI EXTRACTED CONTENT:", content)
+                return content
             else:
+                print("DEBUG: No choices in response, using fallback")
                 return "I understand your privacy-related question. Let me help you with that."
                 
         except Exception as e:
             error_msg = f"AI Error: {str(e)}"
             self.logger.error(error_msg)
+            print("AI ERROR:", str(e))
+            print("DEBUG: Using local fallback with query:", fallback_query)
             
             # Show error in sidebar if possible
             try:
