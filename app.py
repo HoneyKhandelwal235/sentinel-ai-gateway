@@ -92,10 +92,12 @@ def initialize_session_state():
         st.session_state.authenticated = False
     if 'current_user' not in st.session_state:
         st.session_state.current_user = None
-    if 'privacy_engine' not in st.session_state:
-        st.session_state.privacy_engine = None
-    if 'vault' not in st.session_state:
+    if 'privacy_engine' not in st.session_state or 'current_user' not in st.session_state:
+        st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
         st.session_state.vault = IdentityVault()
+    elif 'privacy_engine' not in st.session_state:
+        # Force reinitialize engine if missing
+        st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if 'session_stats' not in st.session_state:
@@ -199,7 +201,15 @@ def render_logout_button():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             initialize_session_state()
-            st.rerun()
+    
+    # Debug section
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🔧 Debug Options")
+    
+    if st.sidebar.button("🔄 Refresh AI Engine"):
+        st.session_state.privacy_engine = PrivacyEngine(inference_mode="huggingface")
+        st.sidebar.success("AI Engine refreshed!")
+        st.rerun()
 
 def render_user_info():
     """Render user information and session statistics in sidebar."""
